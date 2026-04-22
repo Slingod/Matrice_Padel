@@ -1,40 +1,27 @@
 import * as XLSX from 'xlsx';
-import {
-    computeRanking,
-    createPool,
-    createSerpentinEntry,
-} from './tournament';
+import { computeRanking, createPool, createSerpentinEntry } from './tournament';
 import { createEmptyFinalStage } from './finalStage';
 
 function sanitizeSheetName(name) {
-    return String(name || 'Feuille').replace(/[\\/?*[\]:]/g, '').slice(0, 31) || 'Feuille';
+    return String(name || 'Feuille')
+        .replace(/[\\/?*[\]:]/g, '')
+        .slice(0, 31) || 'Feuille';
 }
 
 function normalizeText(value) {
     return String(value ?? '').trim();
 }
 
+function normalizeHeader(value) {
+    return normalizeText(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
 function formatRank(value) {
     const number = Number(value) || 0;
     return number.toLocaleString('fr-FR');
-}
-
-function buildTeamDisplayName(players) {
-    return players.map((player) => player.name).join(' & ');
-}
-
-function buildTeamFullName(players) {
-    return players.map((player) => player.name).join(' & ');
-}
-
-function uniqueBy(array, keyFn) {
-    const seen = new Set();
-    return array.filter((item) => {
-        const key = keyFn(item);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
 }
 
 function downloadBlob(blob, filename) {
@@ -48,70 +35,156 @@ function downloadBlob(blob, filename) {
     URL.revokeObjectURL(url);
 }
 
-function parseParticipantsSheet(sheet) {
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+function buildTeamDisplayName(players) {
+    return players.map((player) => player.name).join(' & ');
+}
+
+function dedupeTeams(teams) {
+    const seen = new Set();
+
+    return teams.filter((team) => {
+        const key = `${team.number}__${team.name}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function parseRowsFromSheet(sheet) {
+    const matrix = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: '',
+        blankrows: false,
+    });
+
+    if (!matrix.length) return [];
+
+    const headerRowIndex = matrix.findIndex((row) =>
+        Array.isArray(row) &&
+        row.some((cell) => {
+            const normalized = normalizeHeader(cell);
+            return normalized === 'equipe' || normalized === 'joueur' || normalized === 'nom';
+        })
+    );
+
+    if (headerRowIndex === -1) return [];
+
+    const rawHeaders = matrix[headerRowIndex];
+    const headers = rawHeaders.map((header, index) =>
+        normalizeText(header) || `col_${index}`
+    );
+
+    return matrix
+        .slice(headerRowIndex + 1)
+        .filter((row) => Array.isArray(row) && row.some((cell) => normalizeText(cell) !== ''))
+        .map((row) => {
+            const obj = {};
+            headers.forEach((header, index) => {
+                obj[header] = row[index] ?? '';
+            });
+            return obj;
+        });
+}
+
+function findValue(row, aliases) {
+    const entries = Object.entries(row);
+
+    for (const [key, value] of entries) {
+        const normalizedKey = normalizeHeader(key);
+        if (aliases.includes(normalizedKey)) {
+            return value;
+        }
+    }
+
+    return '';
+}
+
+function parseParticipantsRows(rows) {
     const grouped = {};
 
     rows.forEach((row) => {
-        const rawTeam = normalizeText(row['Équipe'] || row['Equipe']);
-        const rawSlot = normalizeText(row['Joueur']);
-        const rawName = normalizeText(row['Nom']);
-        const rawRank = Number(row['Rang']) || 0;
+        const rawTeam =
+            findValue(row, ['equipe']) ||
+            findValue(row, ['team']) ||
+            '';
 
-        if (!rawTeam || !rawName) return;
+        const rawSlot =
+            findValue(row, ['joueur']) ||
+            findValue(row, ['player']) ||
+            '';
 
-        const match = rawTeam.match(/(\d+)/);
-        if (!match) return;
+        const rawName =
+            findValue(row, ['nom']) ||
+            findValue(row, ['name']) ||
+            '';
 
-        const teamNumber = Number(match[1]);
+        const rawRank =
+            findValue(row, ['rang']) ||
+            findValue(row, ['rank']) ||
+            findValue(row, ['rang combine']) ||
+            findValue(row, ['rang combine']) ||
+            '';
 
-        if (!grouped[teamNumber]) {
-            grouped[teamNumber] = {
-                number: `Équipe ${teamNumber}`,
+        const teamName = normalizeText(rawTeam);
+        const slot = normalizeText(rawSlot);
+        const playerName = normalizeText(rawName);
+        const rank = Number(rawRank) || 0;
+
+        if (!teamName || !playerName) return;
+
+        const match = teamName.match(/(\d+)/);
+        const teamNumber = match ? Number(match[1]) : null;
+        const teamLabel = teamNumber ? `Équipe ${teamNumber}` : teamName;
+
+        if (!grouped[teamLabel]) {
+            grouped[teamLabel] = {
+                number: teamLabel,
                 players: [],
             };
         }
 
-        grouped[teamNumber].players.push({
-            slot: rawSlot,
-            name: rawName,
-            rank: rawRank,
+        grouped[teamLabel].players.push({
+            id: `${teamLabel}-${slot || grouped[teamLabel].players.length + 1}`,
+            slot: slot || `J${grouped[teamLabel].players.length + 1}`,
+            name: playerName,
+            rank,
         });
     });
 
-    return Object.entries(grouped)
-        .map(([key, value]) => {
-            const players = value.players.sort((a, b) => a.slot.localeCompare(b.slot));
+    return Object.values(grouped)
+        .map((team, index) => {
+            const players = [...team.players].sort((a, b) => a.slot.localeCompare(b.slot));
             const cumulativeRank = players.reduce(
                 (sum, player) => sum + (Number(player.rank) || 0),
                 0
             );
 
             return {
-                number: `Équipe ${key}`,
+                id: `team-import-${index + 1}-${Date.now()}`,
+                number: team.number,
+                name: buildTeamDisplayName(players),
+                fullName: buildTeamDisplayName(players),
+                matchLabel: buildTeamDisplayName(players),
                 players,
                 cumulativeRank,
-                name: buildTeamDisplayName(players),
-                fullName: buildTeamFullName(players),
-                matchLabel: buildTeamFullName(players),
             };
         })
         .sort((a, b) => {
-            const aNum = Number(String(a.number).match(/(\d+)/)?.[1] || 0);
-            const bNum = Number(String(b.number).match(/(\d+)/)?.[1] || 0);
+            const aNum = Number(String(a.number).match(/(\d+)/)?.[1] || 999999);
+            const bNum = Number(String(b.number).match(/(\d+)/)?.[1] || 999999);
             return aNum - bNum;
         });
 }
 
 function buildBaseRows(baseTeams) {
     return baseTeams.map((team) => ({
-        Equipe: team.number,
-        Nom_affiche: team.name,
-        Joueur_1: team.players?.[0]?.name || '',
-        Rang_1: team.players?.[0]?.rank || '',
-        Joueur_2: team.players?.[1]?.name || '',
-        Rang_2: team.players?.[1]?.rank || '',
-        Rang_cumule: team.cumulativeRank || 0,
+        Équipe: team.number,
+        'Nom affiché': team.name,
+        'Joueur 1': team.players?.[0]?.name || '',
+        'Rang 1': team.players?.[0]?.rank || '',
+        'Joueur 2': team.players?.[1]?.name || '',
+        'Rang 2': team.players?.[1]?.rank || '',
+        'Rang cumulé': team.cumulativeRank || 0,
     }));
 }
 
@@ -121,12 +194,13 @@ function buildSerpentinRows(pools, serpentinMap, teamMap) {
     pools.forEach((pool) => {
         (serpentinMap[pool.id] || []).forEach((entry, index) => {
             const team = teamMap.get(entry.value);
+
             rows.push({
                 Poule: pool.name,
                 Position: index + 1,
-                Equipe: team?.name || '',
-                Numero_equipe: team?.number || '',
-                Rang_cumule: team?.cumulativeRank || '',
+                Équipe: team?.name || '',
+                'Numéro équipe': team?.number || '',
+                'Rang cumulé': team?.cumulativeRank || '',
             });
         });
     });
@@ -134,35 +208,160 @@ function buildSerpentinRows(pools, serpentinMap, teamMap) {
     return rows;
 }
 
-function buildPoolRows(pool) {
+function buildPoolRankingRows(pool) {
     const ranking = computeRanking(pool.teams, pool.matches);
 
     const rankingMap = new Map();
     ranking.forEach((row, index) => {
-        rankingMap.set(row.teamId, { position: index + 1, ...row });
+        rankingMap.set(row.teamId, {
+            position: index + 1,
+            ...row,
+        });
     });
 
     return pool.teams.map((team) => {
         const stats = rankingMap.get(team.id);
 
         return {
-            Equipe: team.name,
-            Numero_equipe: team.number,
-            Joueur_1: team.players?.[0]?.name || '',
-            Rang_1: team.players?.[0]?.rank || '',
-            Joueur_2: team.players?.[1]?.name || '',
-            Rang_2: team.players?.[1]?.rank || '',
-            Rang_cumule: team.cumulativeRank || 0,
             Classement: stats?.position ?? '',
-            Joues: stats?.played ?? 0,
-            Victoires: stats?.wins ?? 0,
-            Defaites: stats?.losses ?? 0,
+            Équipe: team.name,
+            'Numéro équipe': team.number,
+            'Rang cumulé': team.cumulativeRank || 0,
+            J: stats?.played ?? 0,
+            V: stats?.wins ?? 0,
+            D: stats?.losses ?? 0,
             PF: stats?.pointsFor ?? 0,
             PA: stats?.pointsAgainst ?? 0,
             Diff: stats?.diff ?? 0,
             Total: stats?.totalScore ?? 0,
         };
     });
+}
+
+function buildPoolMatchRows(pool, getTeamNameById) {
+    return [...pool.matches]
+        .sort((a, b) => {
+            if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+            return (a.localCourt || 0) - (b.localCourt || 0);
+        })
+        .map((match, index) => {
+            const scoreA = Number(match.scoreA);
+            const scoreB = Number(match.scoreB);
+            const isValid =
+                match.scoreA !== '' &&
+                match.scoreB !== '' &&
+                Number.isFinite(scoreA) &&
+                Number.isFinite(scoreB);
+
+            const diffA = isValid ? scoreA - scoreB : '';
+            const diffB = isValid ? scoreB - scoreA : '';
+
+            return {
+                Match: index + 1,
+                Rotation: match.round || 1,
+                Terrain: match.localCourt || 1,
+                'Équipe 1': getTeamNameById(match.teamAId) || '',
+                'Score 1': match.scoreA ?? '',
+                'Score 2': match.scoreB ?? '',
+                'Équipe 2': getTeamNameById(match.teamBId) || '',
+                Diff1: diffA,
+                Diff2: diffB,
+            };
+        });
+}
+
+function groupMatchesByRound(matches) {
+    const roundMap = new Map();
+
+    [...matches]
+        .sort((a, b) => {
+            if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+            return (a.localCourt || 0) - (b.localCourt || 0);
+        })
+        .forEach((match) => {
+            const round = match.round || 1;
+            if (!roundMap.has(round)) {
+                roundMap.set(round, []);
+            }
+            roundMap.get(round).push(match);
+        });
+
+    return [...roundMap.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([round, roundMatches]) => ({
+            round,
+            matches: roundMatches,
+        }));
+}
+
+function buildGlobalPlanning(pools, courtCount) {
+    const poolQueues = pools.map((pool) => ({
+        poolId: pool.id,
+        poolName: pool.name,
+        rounds: groupMatchesByRound(pool.matches),
+    }));
+
+    const slots = [];
+    let slotNumber = 1;
+
+    while (poolQueues.some((item) => item.rounds.length > 0)) {
+        let remainingCourts = courtCount;
+        const slotMatches = [];
+
+        for (const poolQueue of poolQueues) {
+            const nextRound = poolQueue.rounds[0];
+            if (!nextRound) continue;
+
+            if (nextRound.matches.length <= remainingCourts) {
+                nextRound.matches.forEach((match, index) => {
+                    slotMatches.push({
+                        slot: slotNumber,
+                        terrain: courtCount - remainingCourts + index + 1,
+                        poolId: poolQueue.poolId,
+                        poolName: poolQueue.poolName,
+                        round: nextRound.round,
+                        match,
+                    });
+                });
+
+                remainingCourts -= nextRound.matches.length;
+                poolQueue.rounds.shift();
+            }
+        }
+
+        if (slotMatches.length === 0) {
+            const firstPoolWithRounds = poolQueues.find((item) => item.rounds.length > 0);
+            if (!firstPoolWithRounds) break;
+
+            const forcedRound = firstPoolWithRounds.rounds.shift();
+            forcedRound.matches.slice(0, courtCount).forEach((match, index) => {
+                slotMatches.push({
+                    slot: slotNumber,
+                    terrain: index + 1,
+                    poolId: firstPoolWithRounds.poolId,
+                    poolName: firstPoolWithRounds.poolName,
+                    round: forcedRound.round,
+                    match,
+                });
+            });
+        }
+
+        slots.push(slotMatches);
+        slotNumber += 1;
+    }
+
+    return slots.flat();
+}
+
+function buildPlanningRows(pools, courtCount, getTeamNameById) {
+    return buildGlobalPlanning(pools, Math.max(1, Number(courtCount) || 1)).map((row) => ({
+        Créneau: row.slot,
+        Terrain: row.terrain,
+        Poule: row.poolName,
+        Rotation: row.round,
+        'Équipe 1': getTeamNameById(row.match.teamAId) || '',
+        'Équipe 2': getTeamNameById(row.match.teamBId) || '',
+    }));
 }
 
 function buildFinalStageRows(finalStage, getTeamNameById) {
@@ -172,10 +371,10 @@ function buildFinalStageRows(finalStage, getTeamNameById) {
         rows.push({
             Phase: 'Quart de finale',
             Match: `Quart ${index + 1}`,
-            Equipe_A: getTeamNameById(match.teamAId) || '',
-            Score_A: match.scoreA ?? '',
-            Score_B: match.scoreB ?? '',
-            Equipe_B: getTeamNameById(match.teamBId) || '',
+            'Équipe 1': getTeamNameById(match.teamAId) || '',
+            'Score 1': match.scoreA ?? '',
+            'Score 2': match.scoreB ?? '',
+            'Équipe 2': getTeamNameById(match.teamBId) || '',
         });
     });
 
@@ -183,20 +382,20 @@ function buildFinalStageRows(finalStage, getTeamNameById) {
         rows.push({
             Phase: 'Demi-finale',
             Match: `Demi ${index + 1}`,
-            Equipe_A: getTeamNameById(match.teamAId) || '',
-            Score_A: match.scoreA ?? '',
-            Score_B: match.scoreB ?? '',
-            Equipe_B: getTeamNameById(match.teamBId) || '',
+            'Équipe 1': getTeamNameById(match.teamAId) || '',
+            'Score 1': match.scoreA ?? '',
+            'Score 2': match.scoreB ?? '',
+            'Équipe 2': getTeamNameById(match.teamBId) || '',
         });
     });
 
     rows.push({
         Phase: 'Finale',
         Match: 'Finale',
-        Equipe_A: getTeamNameById(finalStage.final.teamAId) || '',
-        Score_A: finalStage.final.scoreA ?? '',
-        Score_B: finalStage.final.scoreB ?? '',
-        Equipe_B: getTeamNameById(finalStage.final.teamBId) || '',
+        'Équipe 1': getTeamNameById(finalStage.final.teamAId) || '',
+        'Score 1': finalStage.final.scoreA ?? '',
+        'Score 2': finalStage.final.scoreB ?? '',
+        'Équipe 2': getTeamNameById(finalStage.final.teamBId) || '',
     });
 
     return rows;
@@ -205,8 +404,8 @@ function buildFinalStageRows(finalStage, getTeamNameById) {
 function buildCombinedRows(combinedPointsRanking) {
     return combinedPointsRanking.map((team, index) => ({
         Place: index + 1,
-        Equipe: team.teamName,
-        Rang_cumule: team.cumulativeRank || 0,
+        Équipe: team.teamName,
+        'Rang cumulé': team.cumulativeRank || 0,
         J: team.played,
         V: team.wins,
         D: team.losses,
@@ -220,8 +419,8 @@ function buildCombinedRows(combinedPointsRanking) {
 function buildFinalRankingRows(finalRanking) {
     return finalRanking.map((row) => ({
         Place: row.position,
-        Equipe: row.teamName,
-        Rang_cumule: row.cumulativeRank || 0,
+        Équipe: row.teamName,
+        'Rang cumulé': row.cumulativeRank || 0,
     }));
 }
 
@@ -231,285 +430,51 @@ export function exportTournamentToCSV(
     serpentinMap,
     finalStage,
     finalRanking,
-    combinedPointsRanking
+    combinedPointsRanking,
+    courtCount = 4
 ) {
     const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
     const getTeamNameById = (teamId) => teamMap.get(teamId)?.name || '';
 
-    const lines = [];
-
-    lines.push([
-        'Type',
-        'Section',
-        'Poule',
-        'Match',
-        'Place',
-        'Equipe',
-        'Numero_equipe',
-        'Joueur_1',
-        'Rang_1',
-        'Joueur_2',
-        'Rang_2',
-        'Rang_cumule',
-        'Classement',
-        'Joues',
-        'Victoires',
-        'Defaites',
-        'PF',
-        'PA',
-        'Diff',
-        'Total',
-        'Position',
-        'Equipe_A',
-        'Score_A',
-        'Score_B',
-        'Equipe_B',
-    ].join(','));
+    const rows = [];
 
     buildBaseRows(baseTeams).forEach((row) => {
-        lines.push(
-            [
-                'BASE',
-                'Base',
-                '',
-                '',
-                '',
-                row.Nom_affiche,
-                row.Equipe,
-                row.Joueur_1,
-                row.Rang_1,
-                row.Joueur_2,
-                row.Rang_2,
-                row.Rang_cumule,
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-            ]
-                .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                .join(',')
-        );
+        rows.push({ Section: 'Base', ...row });
     });
 
     buildSerpentinRows(pools, serpentinMap, teamMap).forEach((row) => {
-        lines.push(
-            [
-                'SERPENTIN',
-                'Serpentin',
-                row.Poule,
-                '',
-                '',
-                row.Equipe,
-                row.Numero_equipe,
-                '',
-                '',
-                '',
-                '',
-                row.Rang_cumule,
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                row.Position,
-                '',
-                '',
-                '',
-                '',
-            ]
-                .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                .join(',')
-        );
+        rows.push({ Section: 'Serpentin', ...row });
+    });
+
+    buildPlanningRows(pools, courtCount, getTeamNameById).forEach((row) => {
+        rows.push({ Section: 'Planning', ...row });
     });
 
     pools.forEach((pool) => {
-        buildPoolRows(pool).forEach((row) => {
-            lines.push(
-                [
-                    'POULE',
-                    pool.name,
-                    pool.name,
-                    '',
-                    row.Classement,
-                    row.Equipe,
-                    row.Numero_equipe,
-                    row.Joueur_1,
-                    row.Rang_1,
-                    row.Joueur_2,
-                    row.Rang_2,
-                    row.Rang_cumule,
-                    row.Classement,
-                    row.Joues,
-                    row.Victoires,
-                    row.Defaites,
-                    row.PF,
-                    row.PA,
-                    row.Diff,
-                    row.Total,
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                ]
-                    .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                    .join(',')
-            );
+        buildPoolRankingRows(pool).forEach((row) => {
+            rows.push({ Section: `${pool.name} - Classement`, ...row });
         });
 
-        pool.matches.forEach((match, index) => {
-            const teamA = pool.teams.find((team) => team.id === match.teamAId);
-            const teamB = pool.teams.find((team) => team.id === match.teamBId);
-
-            lines.push(
-                [
-                    'MATCH',
-                    pool.name,
-                    pool.name,
-                    `Match ${index + 1}`,
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    teamA?.name || '',
-                    match.scoreA ?? '',
-                    match.scoreB ?? '',
-                    teamB?.name || '',
-                ]
-                    .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                    .join(',')
-            );
+        buildPoolMatchRows(pool, getTeamNameById).forEach((row) => {
+            rows.push({ Section: `${pool.name} - Matchs`, ...row });
         });
     });
 
     buildFinalStageRows(finalStage, getTeamNameById).forEach((row) => {
-        lines.push(
-            [
-                'PHASE_FINALE',
-                row.Phase,
-                '',
-                row.Match,
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                row.Equipe_A,
-                row.Score_A,
-                row.Score_B,
-                row.Equipe_B,
-            ]
-                .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                .join(',')
-        );
+        rows.push({ Section: 'Phase finale', ...row });
     });
 
     buildCombinedRows(combinedPointsRanking).forEach((row) => {
-        lines.push(
-            [
-                'CUMUL_POINTS',
-                'Cumuls poules + phase finale',
-                '',
-                '',
-                row.Place,
-                row.Equipe,
-                '',
-                '',
-                '',
-                '',
-                '',
-                row.Rang_cumule,
-                '',
-                row.J,
-                row.V,
-                row.D,
-                row.PF,
-                row.PA,
-                row.Diff,
-                row.Total,
-                '',
-                '',
-                '',
-                '',
-                '',
-            ]
-                .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                .join(',')
-        );
+        rows.push({ Section: 'Cumuls points', ...row });
     });
 
     buildFinalRankingRows(finalRanking).forEach((row) => {
-        lines.push(
-            [
-                'CLASSEMENT_FINAL',
-                'Classement final',
-                '',
-                '',
-                row.Place,
-                row.Equipe,
-                '',
-                '',
-                '',
-                '',
-                '',
-                row.Rang_cumule,
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-            ]
-                .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-                .join(',')
-        );
+        rows.push({ Section: 'Classement final', ...row });
     });
 
-    const blob = new Blob([`\uFEFF${lines.join('\n')}`], {
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const csv = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([`\uFEFF${csv}`], {
         type: 'text/csv;charset=utf-8;',
     });
 
@@ -522,7 +487,8 @@ export function exportTournamentToXLSX(
     serpentinMap,
     finalStage,
     finalRanking,
-    combinedPointsRanking
+    combinedPointsRanking,
+    courtCount = 4
 ) {
     const workbook = XLSX.utils.book_new();
     const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
@@ -540,30 +506,22 @@ export function exportTournamentToXLSX(
         'Serpentin'
     );
 
+    XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(buildPlanningRows(pools, courtCount, getTeamNameById)),
+        'Planning'
+    );
+
     pools.forEach((pool) => {
-        const poolRows = buildPoolRows(pool);
-        const matchRows = pool.matches.map((match, index) => {
-            const teamA = pool.teams.find((team) => team.id === match.teamAId);
-            const teamB = pool.teams.find((team) => team.id === match.teamBId);
-
-            return {
-                Match: index + 1,
-                Equipe_A: teamA?.name || '',
-                Score_A: match.scoreA,
-                Score_B: match.scoreB,
-                Equipe_B: teamB?.name || '',
-            };
-        });
-
         XLSX.utils.book_append_sheet(
             workbook,
-            XLSX.utils.json_to_sheet(poolRows),
-            sanitizeSheetName(`${pool.name} equipes`)
+            XLSX.utils.json_to_sheet(buildPoolRankingRows(pool)),
+            sanitizeSheetName(`${pool.name} classement`)
         );
 
         XLSX.utils.book_append_sheet(
             workbook,
-            XLSX.utils.json_to_sheet(matchRows),
+            XLSX.utils.json_to_sheet(buildPoolMatchRows(pool, getTeamNameById)),
             sanitizeSheetName(`${pool.name} matchs`)
         );
     });
@@ -590,21 +548,28 @@ export function exportTournamentToXLSX(
 }
 
 export async function importTournamentFile(file) {
+    const extension = file.name.split('.').pop()?.toLowerCase();
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
 
-    const participantsSheet =
-        workbook.Sheets.Participants ||
-        workbook.Sheets.participants ||
-        workbook.Sheets['Liste joueurs'] ||
-        workbook.Sheets['liste joueur'];
+    let rows = [];
 
-    const importedTeams = participantsSheet ? parseParticipantsSheet(participantsSheet) : [];
+    if (extension === 'csv') {
+        const firstSheetName = workbook.SheetNames[0];
+        const firstSheet = workbook.Sheets[firstSheetName];
+        rows = parseRowsFromSheet(firstSheet);
+    } else {
+        const participantsSheetName =
+            workbook.SheetNames.find((name) => normalizeHeader(name) === 'participants') ||
+            workbook.SheetNames.find((name) => normalizeHeader(name) === 'liste joueurs') ||
+            workbook.SheetNames.find((name) => normalizeHeader(name) === 'liste joueur') ||
+            workbook.SheetNames.find((name) => normalizeHeader(name) === 'infos') ||
+            workbook.SheetNames[0];
 
-    const uniqueTeams = uniqueBy(
-        importedTeams,
-        (team) => team.number || team.fullName || team.name
-    );
+        rows = parseRowsFromSheet(workbook.Sheets[participantsSheetName]);
+    }
+
+    const importedTeams = dedupeTeams(parseParticipantsRows(rows));
 
     const pools = [
         createPool('Poule A', []),
@@ -623,10 +588,11 @@ export async function importTournamentFile(file) {
     });
 
     return {
-        baseTeams: uniqueTeams,
+        baseTeams: importedTeams,
         pools,
         serpentin,
         activeTab: 'base',
         finalStage: createEmptyFinalStage(),
+        courtCount: 4,
     };
 }

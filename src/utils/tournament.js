@@ -1,11 +1,11 @@
-const STORAGE_KEY = 'matrice-padel-v6';
+const STORAGE_KEY = 'matrice-padel-v8';
 
 function uid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
     }
 
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function createPlayer(name, rank = 0, slot = '') {
@@ -17,18 +17,18 @@ export function createPlayer(name, rank = 0, slot = '') {
     };
 }
 
-export function createTeam(data) {
-    const players = Array.isArray(data?.players) ? data.players : [];
+export function createTeam(data = {}) {
+    const players = Array.isArray(data.players) ? data.players : [];
     const cumulativeRank =
-        Number(data?.cumulativeRank) ||
+        Number(data.cumulativeRank) ||
         players.reduce((sum, player) => sum + (Number(player.rank) || 0), 0);
 
     return {
-        id: data?.id || uid(),
-        number: data?.number || '',
-        name: String(data?.name || '').trim(),
-        fullName: String(data?.fullName || data?.name || '').trim(),
-        matchLabel: String(data?.matchLabel || data?.name || '').trim(),
+        id: data.id || uid(),
+        number: data.number || '',
+        name: String(data.name || '').trim(),
+        fullName: String(data.fullName || data.name || '').trim(),
+        matchLabel: String(data.matchLabel || data.name || '').trim(),
         players,
         cumulativeRank,
     };
@@ -41,45 +41,15 @@ export function createSerpentinEntry(value = '') {
     };
 }
 
-export function createMatch(teamAId, teamBId) {
+export function createMatch(teamAId, teamBId, round = 1, localCourt = 1) {
     return {
         id: uid(),
         teamAId,
         teamBId,
         scoreA: '',
         scoreB: '',
-    };
-}
-
-export function createPool(name, teamItems = []) {
-    const teams = teamItems.map((team) => createTeam(team)).filter((team) => team.name);
-
-    return {
-        id: uid(),
-        name: String(name || '').trim(),
-        teams,
-        matches: syncMatchesPreserveScores(teams, []),
-    };
-}
-
-export function createDefaultState() {
-    const pools = [
-        createPool('Poule A', []),
-        createPool('Poule B', []),
-        createPool('Poule C', []),
-    ];
-
-    const serpentin = {};
-    pools.forEach((pool) => {
-        serpentin[pool.id] = [];
-    });
-
-    return {
-        baseTeams: [],
-        pools,
-        serpentin,
-        activeTab: 'base',
-        finalStage: null,
+        round,
+        localCourt,
     };
 }
 
@@ -87,92 +57,105 @@ function pairKey(a, b) {
     return [a, b].sort().join('__');
 }
 
-function isCompletedMatch(match) {
-    return match.scoreA !== '' && match.scoreB !== '';
+function generateFourTeamsSchedule(teams) {
+    if (teams.length !== 4) return [];
+
+    const rounds = [
+        [
+            [teams[0], teams[1]],
+            [teams[2], teams[3]],
+        ],
+        [
+            [teams[0], teams[3]],
+            [teams[1], teams[2]],
+        ],
+        [
+            [teams[0], teams[2]],
+            [teams[3], teams[1]],
+        ],
+    ];
+
+    return rounds.flatMap((roundPairs, roundIndex) =>
+        roundPairs.map((pair, pairIndex) =>
+            createMatch(pair[0].id, pair[1].id, roundIndex + 1, pairIndex + 1)
+        )
+    );
 }
 
-function countConsecutiveAppearances(schedule, teamId) {
-    let count = 0;
+function generateCircleSchedule(teams) {
+    if (teams.length < 2) return [];
 
-    for (let i = schedule.length - 1; i >= 0; i -= 1) {
-        const match = schedule[i];
-        const appears = match.teamAId === teamId || match.teamBId === teamId;
+    const source = [...teams];
+    const isOdd = source.length % 2 !== 0;
 
-        if (!appears) break;
-        count += 1;
+    if (isOdd) {
+        source.push({ id: '__BYE__' });
     }
 
-    return count;
-}
+    const n = source.length;
+    const rounds = n - 1;
+    const half = n / 2;
+    const rotation = [...source];
+    const matches = [];
 
-function wouldBreakFatigueRule(schedule, match) {
-    const aCount = countConsecutiveAppearances(schedule, match.teamAId);
-    const bCount = countConsecutiveAppearances(schedule, match.teamBId);
+    for (let round = 0; round < rounds; round += 1) {
+        let localCourt = 1;
 
-    return aCount >= 2 || bCount >= 2;
-}
+        for (let i = 0; i < half; i += 1) {
+            const home = rotation[i];
+            const away = rotation[n - 1 - i];
 
-function fatigueOrder(matches, seedSchedule = []) {
-    const remaining = [...matches];
-    const ordered = [...seedSchedule];
+            if (home.id === '__BYE__' || away.id === '__BYE__') continue;
 
-    while (remaining.length > 0) {
-        let selectedIndex = remaining.findIndex(
-            (match) => !wouldBreakFatigueRule(ordered, match)
-        );
-
-        if (selectedIndex === -1) {
-            selectedIndex = 0;
+            matches.push(createMatch(home.id, away.id, round + 1, localCourt));
+            localCourt += 1;
         }
 
-        ordered.push(remaining[selectedIndex]);
-        remaining.splice(selectedIndex, 1);
+        const fixed = rotation[0];
+        const rest = rotation.slice(1);
+        rest.unshift(rest.pop());
+        rotation.splice(0, rotation.length, fixed, ...rest);
     }
 
-    return ordered.slice(seedSchedule.length);
+    return matches;
+}
+
+function generateScheduledMatches(teams) {
+    if (teams.length === 4) {
+        return generateFourTeamsSchedule(teams);
+    }
+
+    return generateCircleSchedule(teams);
 }
 
 export function syncMatchesPreserveScores(teams, existingMatches = []) {
-    const validTeamIds = new Set(teams.map((team) => team.id));
+    const scheduled = generateScheduledMatches(teams);
+
     const existingMap = new Map();
-
     existingMatches.forEach((match) => {
-        if (
-            validTeamIds.has(match.teamAId) &&
-            validTeamIds.has(match.teamBId) &&
-            match.teamAId !== match.teamBId
-        ) {
-            existingMap.set(pairKey(match.teamAId, match.teamBId), match);
-        }
+        if (!match.teamAId || !match.teamBId) return;
+        existingMap.set(pairKey(match.teamAId, match.teamBId), match);
     });
 
-    const validExistingOrdered = existingMatches.filter((match) => {
-        const key = pairKey(match.teamAId, match.teamBId);
-        return existingMap.has(key);
+    return scheduled.map((scheduledMatch) => {
+        const existing = existingMap.get(pairKey(scheduledMatch.teamAId, scheduledMatch.teamBId));
+
+        if (!existing) return scheduledMatch;
+
+        return {
+            ...scheduledMatch,
+            id: existing.id || scheduledMatch.id,
+            scoreA: existing.scoreA ?? '',
+            scoreB: existing.scoreB ?? '',
+        };
     });
-
-    const seen = new Set(validExistingOrdered.map((match) => pairKey(match.teamAId, match.teamBId)));
-    const missing = [];
-
-    for (let i = 0; i < teams.length; i += 1) {
-        for (let j = i + 1; j < teams.length; j += 1) {
-            const key = pairKey(teams[i].id, teams[j].id);
-
-            if (!seen.has(key)) {
-                missing.push(createMatch(teams[i].id, teams[j].id));
-            }
-        }
-    }
-
-    const orderedMissing = fatigueOrder(missing, validExistingOrdered);
-    return [...validExistingOrdered, ...orderedMissing];
 }
 
 export function optimizeMatchOrder(matches = []) {
-    const completed = matches.filter(isCompletedMatch);
-    const pending = matches.filter((match) => !isCompletedMatch(match));
-    const orderedPending = fatigueOrder(pending, completed);
-    return [...completed, ...orderedPending];
+    return [...matches].sort((a, b) => {
+        if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+        return (a.localCourt || 0) - (b.localCourt || 0);
+    });
 }
 
 export function getWinner(match) {
@@ -207,9 +190,7 @@ export function computeRanking(teams, matches) {
     }));
 
     const teamMap = new Map();
-    ranking.forEach((team) => {
-        teamMap.set(team.teamId, team);
-    });
+    ranking.forEach((team) => teamMap.set(team.teamId, team));
 
     matches.forEach((match) => {
         const scoreA = Number(match.scoreA);
@@ -262,6 +243,44 @@ export function computeRanking(teams, matches) {
     });
 }
 
+export function createPool(name, teamItems = []) {
+    const teams = teamItems.map((team) => createTeam(team)).filter((team) => team.name);
+
+    return {
+        id: uid(),
+        name: String(name || '').trim(),
+        teams,
+        matches: syncMatchesPreserveScores(teams, []),
+    };
+}
+
+export function createDefaultState() {
+    const pools = [
+        createPool('Poule A', []),
+        createPool('Poule B', []),
+        createPool('Poule C', []),
+    ];
+
+    const serpentin = {};
+    pools.forEach((pool) => {
+        serpentin[pool.id] = [
+            createSerpentinEntry(''),
+            createSerpentinEntry(''),
+            createSerpentinEntry(''),
+            createSerpentinEntry(''),
+        ];
+    });
+
+    return {
+        baseTeams: [],
+        pools,
+        serpentin,
+        activeTab: 'base',
+        finalStage: null,
+        courtCount: 4,
+    };
+}
+
 export function saveAppState(state) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -289,7 +308,9 @@ export function loadAppState() {
                     fullName: team.fullName,
                     matchLabel: team.matchLabel,
                     players: Array.isArray(team.players)
-                        ? team.players.map((player) => createPlayer(player.name, player.rank, player.slot))
+                        ? team.players.map((player) =>
+                            createPlayer(player.name, player.rank, player.slot)
+                        )
                         : [],
                     cumulativeRank: team.cumulativeRank,
                 })
@@ -306,7 +327,9 @@ export function loadAppState() {
                         fullName: team.fullName,
                         matchLabel: team.matchLabel,
                         players: Array.isArray(team.players)
-                            ? team.players.map((player) => createPlayer(player.name, player.rank, player.slot))
+                            ? team.players.map((player) =>
+                                createPlayer(player.name, player.rank, player.slot)
+                            )
                             : [],
                         cumulativeRank: team.cumulativeRank,
                     })
@@ -320,6 +343,8 @@ export function loadAppState() {
                     teamBId: match.teamBId,
                     scoreA: match.scoreA ?? '',
                     scoreB: match.scoreB ?? '',
+                    round: match.round || 1,
+                    localCourt: match.localCourt || 1,
                 }))
                 : [];
 
@@ -355,12 +380,14 @@ export function loadAppState() {
             activeTab:
                 parsed.activeTab === 'base' ||
                 parsed.activeTab === 'serpentin' ||
+                parsed.activeTab === 'planning' ||
                 parsed.activeTab === 'finals' ||
                 parsed.activeTab === 'final-ranking' ||
                 pools.some((pool) => pool.id === parsed.activeTab)
                     ? parsed.activeTab
                     : 'base',
             finalStage: parsed.finalStage || null,
+            courtCount: Number(parsed.courtCount) > 0 ? Number(parsed.courtCount) : 4,
         };
     } catch {
         return createDefaultState();
