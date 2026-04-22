@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
 import {
+  FaEdit,
+  FaExchangeAlt,
   FaFileCsv,
   FaFileExcel,
   FaPlus,
+  FaSave,
+  FaTimes,
   FaTrash,
 } from 'react-icons/fa';
 import {
@@ -84,10 +88,7 @@ function SortableSerpentinRow({
           ↕
         </button>
 
-        <select
-            value={entry.value}
-            onChange={(event) => onChange(event.target.value)}
-        >
+        <select value={entry.value} onChange={(event) => onChange(event.target.value)}>
           <option value="">-- Sélectionner une équipe --</option>
           {baseTeams.map((team) => (
               <option key={team.id} value={team.id}>
@@ -197,9 +198,7 @@ function syncPoolsFromSerpentin(baseTeams, previousPools, serpentinMap) {
 
     const uniqueIds = [...new Set(selectedIds)];
 
-    const teams = uniqueIds
-        .map((teamId) => teamMap.get(teamId))
-        .filter(Boolean);
+    const teams = uniqueIds.map((teamId) => teamMap.get(teamId)).filter(Boolean);
 
     return {
       ...pool,
@@ -269,6 +268,45 @@ function applyMatchToStats(statMap, teamAId, teamBId, scoreAValue, scoreBValue) 
   }
 }
 
+function buildTeamFromDraft(draft, existingId) {
+  const player1Rank = Number(draft.player1Rank) || 0;
+  const player2Rank = Number(draft.player2Rank) || 0;
+
+  return {
+    id: existingId,
+    number: String(draft.number || '').trim(),
+    name: String(draft.displayName || '').trim(),
+    fullName: String(draft.displayName || '').trim(),
+    matchLabel: String(draft.displayName || '').trim(),
+    players: [
+      {
+        id: `${existingId}-p1`,
+        slot: 'J1',
+        name: String(draft.player1Name || '').trim(),
+        rank: player1Rank,
+      },
+      {
+        id: `${existingId}-p2`,
+        slot: 'J2',
+        name: String(draft.player2Name || '').trim(),
+        rank: player2Rank,
+      },
+    ],
+    cumulativeRank: player1Rank + player2Rank,
+  };
+}
+
+function getInitialDraftFromTeam(team) {
+  return {
+    number: team.number || '',
+    displayName: team.name || '',
+    player1Name: team.players?.[0]?.name || '',
+    player1Rank: String(team.players?.[0]?.rank ?? ''),
+    player2Name: team.players?.[1]?.name || '',
+    player2Rank: String(team.players?.[1]?.rank ?? ''),
+  };
+}
+
 function App() {
   const initialState = useMemo(() => loadAppState(), []);
   const [baseTeams, setBaseTeams] = useState(initialState.baseTeams || []);
@@ -277,6 +315,8 @@ function App() {
   const [activeTab, setActiveTab] = useState(initialState.activeTab);
 
   const [newPoolName, setNewPoolName] = useState('');
+  const [editingBaseTeamId, setEditingBaseTeamId] = useState(null);
+  const [editingBaseDraft, setEditingBaseDraft] = useState(null);
 
   const importInputRef = useRef(null);
 
@@ -295,6 +335,10 @@ function App() {
     });
 
     return [...uniqueMap.values()].sort((a, b) => {
+      const aRank = Number(a.cumulativeRank) || 999999999;
+      const bRank = Number(b.cumulativeRank) || 999999999;
+      if (aRank !== bRank) return aRank - bRank;
+
       const aNum = Number(String(a.number).match(/(\d+)/)?.[1] || 0);
       const bNum = Number(String(b.number).match(/(\d+)/)?.[1] || 0);
       return aNum - bNum;
@@ -343,34 +387,16 @@ function App() {
 
     pools.forEach((pool) => {
       pool.matches.forEach((match) => {
-        applyMatchToStats(
-            statMap,
-            match.teamAId,
-            match.teamBId,
-            match.scoreA,
-            match.scoreB
-        );
+        applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
       });
     });
 
     finalStage.quarterFinals.forEach((match) => {
-      applyMatchToStats(
-          statMap,
-          match.teamAId,
-          match.teamBId,
-          match.scoreA,
-          match.scoreB
-      );
+      applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
     });
 
     finalStage.semiFinals.forEach((match) => {
-      applyMatchToStats(
-          statMap,
-          match.teamAId,
-          match.teamBId,
-          match.scoreA,
-          match.scoreB
-      );
+      applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
     });
 
     applyMatchToStats(
@@ -435,15 +461,51 @@ function App() {
     }`;
   }
 
+  function handleStartBaseEdit(team) {
+    setEditingBaseTeamId(team.id);
+    setEditingBaseDraft(getInitialDraftFromTeam(team));
+  }
+
+  function handleCancelBaseEdit() {
+    setEditingBaseTeamId(null);
+    setEditingBaseDraft(null);
+  }
+
+  function handleBaseDraftChange(field, value) {
+    setEditingBaseDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
+  function handleSwapPlayersInDraft() {
+    setEditingBaseDraft((prev) => ({
+      ...prev,
+      player1Name: prev.player2Name,
+      player1Rank: prev.player2Rank,
+      player2Name: prev.player1Name,
+      player2Rank: prev.player1Rank,
+    }));
+  }
+
+  function handleSaveBaseEdit(teamId) {
+    if (!editingBaseDraft) return;
+
+    const updatedTeam = buildTeamFromDraft(editingBaseDraft, teamId);
+
+    setBaseTeams((prev) => prev.map((team) => (team.id === teamId ? updatedTeam : team)));
+
+    setEditingBaseTeamId(null);
+    setEditingBaseDraft(null);
+  }
+
   function handleAddPool(event) {
     event.preventDefault();
 
     const cleanName = newPoolName.trim();
     if (!cleanName) return;
 
-    const exists = pools.some(
-        (pool) => pool.name.toLowerCase() === cleanName.toLowerCase()
-    );
+    const exists = pools.some((pool) => pool.name.toLowerCase() === cleanName.toLowerCase());
     if (exists) return;
 
     const newPool = createPool(cleanName, []);
@@ -582,6 +644,8 @@ function App() {
       setSerpentin(imported.serpentin || {});
       setActiveTab(imported.activeTab || 'base');
       setFinalStage(imported.finalStage || createEmptyFinalStage());
+      setEditingBaseTeamId(null);
+      setEditingBaseDraft(null);
     } catch (error) {
       console.error(error);
       alert("Impossible d'importer ce fichier.");
@@ -627,7 +691,7 @@ function App() {
             <p className="badge">Matrice PADEL</p>
             <h1>Gestion des matchs et classement automatique</h1>
             <p className="subtitle">
-              Import XLSX / CSV, base joueurs, serpentin manuel, poules automatiques depuis le serpentin, phase finale et classement final.
+              Import XLSX / CSV, base joueurs modifiable, serpentin manuel, poules automatiques depuis le serpentin, phase finale et classement final.
             </p>
           </div>
         </header>
@@ -666,7 +730,7 @@ function App() {
                 className={`tab-button ${activeTab === 'finals' ? 'active' : ''}`}
                 onClick={() => setActiveTab('finals')}
             >
-              Phase finale
+              Quarts/Demi/Final
             </button>
 
             <button
@@ -751,7 +815,7 @@ function App() {
             <section className="card full-width">
               <h2>Base équipes / joueurs</h2>
               <p className="note">
-                Cette page regroupe toutes les équipes importées, y compris les têtes de poule ou équipes hors poules.
+                Tu peux modifier les joueurs, leurs rangs, le nom affiché, ou inverser Joueur 1 / Joueur 2. Le rang cumulé sera recalculé automatiquement.
               </p>
 
               <div className="table-wrapper">
@@ -765,25 +829,160 @@ function App() {
                     <th>Joueur 2</th>
                     <th>Rang 2</th>
                     <th>Rang cumulé</th>
+                    <th>Actions</th>
                   </tr>
                   </thead>
                   <tbody>
                   {allTeams.length === 0 ? (
                       <tr>
-                        <td colSpan="7">Aucune donnée importée pour le moment.</td>
+                        <td colSpan="8">Aucune donnée importée pour le moment.</td>
                       </tr>
                   ) : (
-                      allTeams.map((team) => (
-                          <tr key={team.id}>
-                            <td>{team.number}</td>
-                            <td>{team.name}</td>
-                            <td>{team.players?.[0]?.name || ''}</td>
-                            <td>{team.players?.[0]?.rank ? formatRank(team.players[0].rank) : ''}</td>
-                            <td>{team.players?.[1]?.name || ''}</td>
-                            <td>{team.players?.[1]?.rank ? formatRank(team.players[1].rank) : ''}</td>
-                            <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
-                          </tr>
-                      ))
+                      allTeams.map((team) => {
+                        const isEditing = editingBaseTeamId === team.id;
+                        const liveTotal = isEditing
+                            ? (Number(editingBaseDraft?.player1Rank) || 0) +
+                            (Number(editingBaseDraft?.player2Rank) || 0)
+                            : team.cumulativeRank;
+
+                        return (
+                            <tr key={team.id}>
+                              <td>
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={editingBaseDraft.number}
+                                        onChange={(event) =>
+                                            handleBaseDraftChange('number', event.target.value)
+                                        }
+                                    />
+                                ) : (
+                                    team.number
+                                )}
+                              </td>
+
+                              <td>
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={editingBaseDraft.displayName}
+                                        onChange={(event) =>
+                                            handleBaseDraftChange('displayName', event.target.value)
+                                        }
+                                    />
+                                ) : (
+                                    team.name
+                                )}
+                              </td>
+
+                              <td>
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={editingBaseDraft.player1Name}
+                                        onChange={(event) =>
+                                            handleBaseDraftChange('player1Name', event.target.value)
+                                        }
+                                    />
+                                ) : (
+                                    team.players?.[0]?.name || ''
+                                )}
+                              </td>
+
+                              <td>
+                                {isEditing ? (
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={editingBaseDraft.player1Rank}
+                                        onChange={(event) =>
+                                            handleBaseDraftChange('player1Rank', event.target.value)
+                                        }
+                                    />
+                                ) : team.players?.[0]?.rank ? (
+                                    formatRank(team.players[0].rank)
+                                ) : (
+                                    ''
+                                )}
+                              </td>
+
+                              <td>
+                                {isEditing ? (
+                                    <input
+                                        type="text"
+                                        value={editingBaseDraft.player2Name}
+                                        onChange={(event) =>
+                                            handleBaseDraftChange('player2Name', event.target.value)
+                                        }
+                                    />
+                                ) : (
+                                    team.players?.[1]?.name || ''
+                                )}
+                              </td>
+
+                              <td>
+                                {isEditing ? (
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={editingBaseDraft.player2Rank}
+                                        onChange={(event) =>
+                                            handleBaseDraftChange('player2Rank', event.target.value)
+                                        }
+                                    />
+                                ) : team.players?.[1]?.rank ? (
+                                    formatRank(team.players[1].rank)
+                                ) : (
+                                    ''
+                                )}
+                              </td>
+
+                              <td>{liveTotal ? formatRank(liveTotal) : ''}</td>
+
+                              <td>
+                                <div className="team-actions">
+                                  {isEditing ? (
+                                      <>
+                                        <button
+                                            type="button"
+                                            className="icon-btn"
+                                            title="Inverser Joueur 1 / Joueur 2"
+                                            onClick={handleSwapPlayersInDraft}
+                                        >
+                                          <FaExchangeAlt />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="icon-btn"
+                                            title="Enregistrer"
+                                            onClick={() => handleSaveBaseEdit(team.id)}
+                                        >
+                                          <FaSave />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="danger small-btn"
+                                            title="Annuler"
+                                            onClick={handleCancelBaseEdit}
+                                        >
+                                          <FaTimes />
+                                        </button>
+                                      </>
+                                  ) : (
+                                      <button
+                                          type="button"
+                                          className="icon-btn"
+                                          title="Modifier"
+                                          onClick={() => handleStartBaseEdit(team)}
+                                      >
+                                        <FaEdit />
+                                      </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                        );
+                      })
                   )}
                   </tbody>
                 </table>
@@ -852,7 +1051,7 @@ function App() {
             <section className="card full-width">
               <div className="section-head">
                 <div>
-                  <h2>Phase finale</h2>
+                  <h2>Quarts/Demi/Final</h2>
                   <p className="note">
                     Sélectionne qui joue contre qui, puis saisis les scores pour faire avancer automatiquement les vainqueurs.
                   </p>
