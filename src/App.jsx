@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
 import {
-  FaArrowDown,
-  FaArrowUp,
-  FaCog,
   FaFileCsv,
   FaFileExcel,
   FaPlus,
@@ -27,7 +24,6 @@ import {
   computeRanking,
   createPool,
   createSerpentinEntry,
-  createTeam,
   getWinner,
   loadAppState,
   optimizeMatchOrder,
@@ -35,12 +31,12 @@ import {
   syncMatchesPreserveScores,
 } from './utils/tournament';
 import {
-  exportPoolsToCSV,
-  exportPoolsToXLSX,
+  exportTournamentToCSV,
+  exportTournamentToXLSX,
   importTournamentFile,
 } from './utils/importExport';
 import {
-  assignTeamToFinalSlot,
+  assignQuarterTeam,
   buildFinalRanking,
   createEmptyFinalStage,
   getDisplayWinner,
@@ -48,102 +44,14 @@ import {
   updateFinalStageMatch,
 } from './utils/finalStage';
 
-function SortableTeamRow({
-                           team,
-                           index,
-                           isEditing,
-                           editingValue,
-                           onEditValueChange,
-                           onStartEdit,
-                           onSaveEdit,
-                           onDelete,
-                           onMoveUp,
-                           onMoveDown,
-                         }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: team.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-      <div
-          ref={setNodeRef}
-          style={style}
-          className={`team-item team-item-advanced ${isDragging ? 'dragging' : ''}`}
-      >
-        <div className="team-main">
-          <button
-              ref={setActivatorNodeRef}
-              type="button"
-              className="drag-handle"
-              title="Glisser-déposer"
-              {...attributes}
-              {...listeners}
-          >
-            ↕
-          </button>
-
-          <span className="team-index">{index + 1}.</span>
-
-          {isEditing ? (
-              <input
-                  type="text"
-                  value={editingValue}
-                  onChange={(event) => onEditValueChange(event.target.value)}
-              />
-          ) : (
-              <span className="team-name">{team.name}</span>
-          )}
-        </div>
-
-        <div className="team-actions">
-          <button type="button" className="icon-btn" onClick={onMoveUp} title="Monter">
-            <FaArrowUp />
-          </button>
-
-          <button
-              type="button"
-              className="icon-btn"
-              onClick={onMoveDown}
-              title="Descendre"
-          >
-            <FaArrowDown />
-          </button>
-
-          {isEditing ? (
-              <button type="button" className="edit-btn" onClick={onSaveEdit}>
-                Enregistrer
-              </button>
-          ) : (
-              <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={onStartEdit}
-                  title="Modifier"
-              >
-                <FaCog />
-              </button>
-          )}
-
-          <button type="button" className="danger" onClick={onDelete}>
-            Supprimer
-          </button>
-        </div>
-      </div>
-  );
-}
-
-function SortableSerpentinRow({ entry, index, onChange, onDelete }) {
+function SortableSerpentinRow({
+                                entry,
+                                index,
+                                baseTeams,
+                                getTeamLabelById,
+                                onChange,
+                                onDelete,
+                              }) {
   const {
     attributes,
     listeners,
@@ -176,12 +84,17 @@ function SortableSerpentinRow({ entry, index, onChange, onDelete }) {
           ↕
         </button>
 
-        <input
-            type="text"
+        <select
             value={entry.value}
-            placeholder={`Position ${index + 1}`}
             onChange={(event) => onChange(event.target.value)}
-        />
+        >
+          <option value="">-- Sélectionner une équipe --</option>
+          {baseTeams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {getTeamLabelById(team.id)}
+              </option>
+          ))}
+        </select>
 
         <button type="button" className="danger small-btn" onClick={onDelete}>
           <FaTrash />
@@ -190,7 +103,17 @@ function SortableSerpentinRow({ entry, index, onChange, onDelete }) {
   );
 }
 
-function FinalMatchCard({ title, match, getTeamNameById, onScoreChange, accent = '' }) {
+function FinalMatchCard({
+                          title,
+                          match,
+                          getTeamNameById,
+                          getTeamLabelById,
+                          onScoreChange,
+                          allGroups,
+                          accent = '',
+                          editableTeams = false,
+                          onTeamChange,
+                        }) {
   const winner = getDisplayWinner(match);
 
   return (
@@ -198,9 +121,28 @@ function FinalMatchCard({ title, match, getTeamNameById, onScoreChange, accent =
         <div className="bracket-match-header">{title}</div>
 
         <div className={`bracket-team-row ${winner === 'A' ? 'winner' : ''}`}>
-        <span className="bracket-team-name">
-          {getTeamNameById(match.teamAId) || 'À définir'}
-        </span>
+          {editableTeams ? (
+              <select
+                  value={match.teamAId}
+                  onChange={(event) => onTeamChange('teamAId', event.target.value)}
+              >
+                <option value="">-- Sélectionner une équipe --</option>
+                {allGroups.map((group) => (
+                    <optgroup key={group.id} label={group.name}>
+                      {group.teams.map((team, teamIndex) => (
+                          <option key={team.id} value={team.id}>
+                            {group.name} #{teamIndex + 1} — {getTeamLabelById(team.id)}
+                          </option>
+                      ))}
+                    </optgroup>
+                ))}
+              </select>
+          ) : (
+              <span className="bracket-team-name">
+            {getTeamNameById(match.teamAId) || 'À définir'}
+          </span>
+          )}
+
           <input
               type="number"
               min="0"
@@ -212,9 +154,28 @@ function FinalMatchCard({ title, match, getTeamNameById, onScoreChange, accent =
         <div className="bracket-vs">vs</div>
 
         <div className={`bracket-team-row ${winner === 'B' ? 'winner' : ''}`}>
-        <span className="bracket-team-name">
-          {getTeamNameById(match.teamBId) || 'À définir'}
-        </span>
+          {editableTeams ? (
+              <select
+                  value={match.teamBId}
+                  onChange={(event) => onTeamChange('teamBId', event.target.value)}
+              >
+                <option value="">-- Sélectionner une équipe --</option>
+                {allGroups.map((group) => (
+                    <optgroup key={group.id} label={group.name}>
+                      {group.teams.map((team, teamIndex) => (
+                          <option key={team.id} value={team.id}>
+                            {group.name} #{teamIndex + 1} — {getTeamLabelById(team.id)}
+                          </option>
+                      ))}
+                    </optgroup>
+                ))}
+              </select>
+          ) : (
+              <span className="bracket-team-name">
+            {getTeamNameById(match.teamBId) || 'À définir'}
+          </span>
+          )}
+
           <input
               type="number"
               min="0"
@@ -226,20 +187,96 @@ function FinalMatchCard({ title, match, getTeamNameById, onScoreChange, accent =
   );
 }
 
+function syncPoolsFromSerpentin(baseTeams, previousPools, serpentinMap) {
+  const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
+
+  return previousPools.map((pool) => {
+    const selectedIds = (serpentinMap[pool.id] || [])
+        .map((entry) => entry.value)
+        .filter(Boolean);
+
+    const uniqueIds = [...new Set(selectedIds)];
+
+    const teams = uniqueIds
+        .map((teamId) => teamMap.get(teamId))
+        .filter(Boolean);
+
+    return {
+      ...pool,
+      teams,
+      matches: syncMatchesPreserveScores(teams, pool.matches),
+    };
+  });
+}
+
+function createCombinedStatRow(team) {
+  return {
+    teamId: team.id,
+    teamName: team.name,
+    cumulativeRank: team.cumulativeRank || 0,
+    played: 0,
+    wins: 0,
+    losses: 0,
+    pointsFor: 0,
+    pointsAgainst: 0,
+    diff: 0,
+    totalScore: 0,
+  };
+}
+
+function applyMatchToStats(statMap, teamAId, teamBId, scoreAValue, scoreBValue) {
+  const scoreA = Number(scoreAValue);
+  const scoreB = Number(scoreBValue);
+
+  const isValid =
+      teamAId &&
+      teamBId &&
+      scoreAValue !== '' &&
+      scoreBValue !== '' &&
+      Number.isFinite(scoreA) &&
+      Number.isFinite(scoreB);
+
+  if (!isValid) return;
+
+  const teamA = statMap.get(teamAId);
+  const teamB = statMap.get(teamBId);
+
+  if (!teamA || !teamB) return;
+
+  teamA.played += 1;
+  teamB.played += 1;
+
+  teamA.pointsFor += scoreA;
+  teamA.pointsAgainst += scoreB;
+  teamB.pointsFor += scoreB;
+  teamB.pointsAgainst += scoreA;
+
+  const diffA = scoreA - scoreB;
+  const diffB = scoreB - scoreA;
+
+  teamA.diff += diffA;
+  teamB.diff += diffB;
+
+  teamA.totalScore += diffA;
+  teamB.totalScore += diffB;
+
+  if (scoreA > scoreB) {
+    teamA.wins += 1;
+    teamB.losses += 1;
+  } else if (scoreB > scoreA) {
+    teamB.wins += 1;
+    teamA.losses += 1;
+  }
+}
+
 function App() {
   const initialState = useMemo(() => loadAppState(), []);
+  const [baseTeams, setBaseTeams] = useState(initialState.baseTeams || []);
   const [pools, setPools] = useState(initialState.pools);
   const [serpentin, setSerpentin] = useState(initialState.serpentin);
   const [activeTab, setActiveTab] = useState(initialState.activeTab);
 
   const [newPoolName, setNewPoolName] = useState('');
-  const [newTeamName, setNewTeamName] = useState('');
-
-  const [editingPoolId, setEditingPoolId] = useState(null);
-  const [editingPoolValue, setEditingPoolValue] = useState('');
-
-  const [editingTeamId, setEditingTeamId] = useState(null);
-  const [editingTeamValue, setEditingTeamValue] = useState('');
 
   const importInputRef = useRef(null);
 
@@ -247,7 +284,40 @@ function App() {
       useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
-  const allTeams = useMemo(() => pools.flatMap((pool) => pool.teams), [pools]);
+  const allTeams = useMemo(() => {
+    const uniqueMap = new Map();
+
+    baseTeams.forEach((team) => {
+      const key = team.number || team.fullName || team.name || team.id;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, team);
+      }
+    });
+
+    return [...uniqueMap.values()].sort((a, b) => {
+      const aNum = Number(String(a.number).match(/(\d+)/)?.[1] || 0);
+      const bNum = Number(String(b.number).match(/(\d+)/)?.[1] || 0);
+      return aNum - bNum;
+    });
+  }, [baseTeams]);
+
+  const [finalStage, setFinalStage] = useState(() =>
+      syncFinalStageWithTeams(initialState.finalStage || createEmptyFinalStage(), allTeams)
+  );
+
+  useEffect(() => {
+    setPools((prev) => syncPoolsFromSerpentin(baseTeams, prev, serpentin));
+  }, [baseTeams, serpentin]);
+
+  useEffect(() => {
+    setFinalStage((prev) => syncFinalStageWithTeams(prev, allTeams));
+  }, [allTeams]);
+
+  useEffect(() => {
+    saveAppState({ baseTeams, pools, serpentin, activeTab, finalStage });
+  }, [baseTeams, pools, serpentin, activeTab, finalStage]);
+
+  const activePool = pools.find((pool) => pool.id === activeTab) || null;
 
   const rankedPools = useMemo(
       () =>
@@ -257,20 +327,6 @@ function App() {
           })),
       [pools]
   );
-
-  const [finalStage, setFinalStage] = useState(() =>
-      syncFinalStageWithTeams(initialState.finalStage || createEmptyFinalStage(), allTeams)
-  );
-
-  useEffect(() => {
-    setFinalStage((prev) => syncFinalStageWithTeams(prev, allTeams));
-  }, [allTeams]);
-
-  useEffect(() => {
-    saveAppState({ pools, serpentin, activeTab, finalStage });
-  }, [pools, serpentin, activeTab, finalStage]);
-
-  const activePool = pools.find((pool) => pool.id === activeTab) || null;
 
   const ranking = useMemo(() => {
     if (!activePool) return [];
@@ -282,10 +338,101 @@ function App() {
       [finalStage, rankedPools, allTeams]
   );
 
-  function updatePool(poolId, updater) {
-    setPools((prevPools) =>
-        prevPools.map((pool) => (pool.id === poolId ? updater(pool) : pool))
+  const combinedPointsRanking = useMemo(() => {
+    const statMap = new Map(allTeams.map((team) => [team.id, createCombinedStatRow(team)]));
+
+    pools.forEach((pool) => {
+      pool.matches.forEach((match) => {
+        applyMatchToStats(
+            statMap,
+            match.teamAId,
+            match.teamBId,
+            match.scoreA,
+            match.scoreB
+        );
+      });
+    });
+
+    finalStage.quarterFinals.forEach((match) => {
+      applyMatchToStats(
+          statMap,
+          match.teamAId,
+          match.teamBId,
+          match.scoreA,
+          match.scoreB
+      );
+    });
+
+    finalStage.semiFinals.forEach((match) => {
+      applyMatchToStats(
+          statMap,
+          match.teamAId,
+          match.teamBId,
+          match.scoreA,
+          match.scoreB
+      );
+    });
+
+    applyMatchToStats(
+        statMap,
+        finalStage.final.teamAId,
+        finalStage.final.teamBId,
+        finalStage.final.scoreA,
+        finalStage.final.scoreB
     );
+
+    return [...statMap.values()]
+        .filter(
+            (team) =>
+                team.played > 0 ||
+                team.pointsFor > 0 ||
+                team.pointsAgainst > 0 ||
+                team.totalScore !== 0
+        )
+        .sort((a, b) => {
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+          if (b.diff !== a.diff) return b.diff - a.diff;
+          return b.pointsFor - a.pointsFor;
+        });
+  }, [allTeams, pools, finalStage]);
+
+  const finalOptionGroups = useMemo(() => {
+    const placedIds = new Set(pools.flatMap((pool) => pool.teams.map((team) => team.id)));
+
+    const groups = pools.map((pool) => ({
+      id: pool.id,
+      name: pool.name,
+      teams: pool.teams,
+    }));
+
+    const unplaced = allTeams.filter((team) => !placedIds.has(team.id));
+    if (unplaced.length > 0) {
+      groups.push({
+        id: 'hors-poules',
+        name: 'TS',
+        teams: unplaced,
+      });
+    }
+
+    return groups;
+  }, [pools, allTeams]);
+
+  function formatRank(value) {
+    const number = Number(value) || 0;
+    return number.toLocaleString('fr-FR');
+  }
+
+  function getTeamNameById(teamId) {
+    return allTeams.find((team) => team.id === teamId)?.name || '';
+  }
+
+  function getTeamLabelById(teamId) {
+    const team = allTeams.find((item) => item.id === teamId);
+    if (!team) return '';
+    return `${team.number} — ${team.name}${
+        team.cumulativeRank ? ` — Rang cumulé: ${formatRank(team.cumulativeRank)}` : ''
+    }`;
   }
 
   function handleAddPool(event) {
@@ -304,17 +451,20 @@ function App() {
     setPools((prev) => [...prev, newPool]);
     setSerpentin((prev) => ({
       ...prev,
-      [newPool.id]: [],
+      [newPool.id]: [
+        createSerpentinEntry(''),
+        createSerpentinEntry(''),
+        createSerpentinEntry(''),
+        createSerpentinEntry(''),
+      ],
     }));
     setNewPoolName('');
   }
 
   function handleDeletePool(poolId) {
-    const pool = pools.find((item) => item.id === poolId);
-    if (!pool) return;
     if (pools.length <= 1) return;
 
-    setPools((prev) => prev.filter((item) => item.id !== poolId));
+    setPools((prev) => prev.filter((pool) => pool.id !== poolId));
     setSerpentin((prev) => {
       const next = { ...prev };
       delete next[poolId];
@@ -322,148 +472,8 @@ function App() {
     });
 
     if (activeTab === poolId) {
-      setActiveTab('serpentin');
+      setActiveTab('base');
     }
-  }
-
-  function handleStartPoolEdit(pool) {
-    setEditingPoolId(pool.id);
-    setEditingPoolValue(pool.name);
-  }
-
-  function handleSavePoolEdit(poolId) {
-    const cleanName = editingPoolValue.trim();
-    if (!cleanName) return;
-
-    const alreadyExists = pools.some(
-        (pool) =>
-            pool.id !== poolId && pool.name.toLowerCase() === cleanName.toLowerCase()
-    );
-
-    if (alreadyExists) return;
-
-    updatePool(poolId, (pool) => ({
-      ...pool,
-      name: cleanName,
-    }));
-
-    setEditingPoolId(null);
-    setEditingPoolValue('');
-  }
-
-  function handleAddTeam(event) {
-    event.preventDefault();
-    if (!activePool) return;
-
-    const cleanName = newTeamName.trim();
-    if (!cleanName) return;
-
-    updatePool(activePool.id, (pool) => {
-      const teams = [...pool.teams, createTeam(cleanName)];
-
-      return {
-        ...pool,
-        teams,
-        matches: syncMatchesPreserveScores(teams, pool.matches),
-      };
-    });
-
-    setNewTeamName('');
-  }
-
-  function handleDeleteTeam(teamId) {
-    if (!activePool) return;
-
-    updatePool(activePool.id, (pool) => {
-      const teams = pool.teams.filter((team) => team.id !== teamId);
-
-      return {
-        ...pool,
-        teams,
-        matches: syncMatchesPreserveScores(teams, pool.matches),
-      };
-    });
-  }
-
-  function handleStartTeamEdit(team) {
-    setEditingTeamId(team.id);
-    setEditingTeamValue(team.name);
-  }
-
-  function handleSaveTeamEdit(teamId) {
-    if (!activePool) return;
-
-    const cleanValue = editingTeamValue.trim();
-    if (!cleanValue) return;
-
-    updatePool(activePool.id, (pool) => ({
-      ...pool,
-      teams: pool.teams.map((team) =>
-          team.id === teamId ? { ...team, name: cleanValue } : team
-      ),
-    }));
-
-    setEditingTeamId(null);
-    setEditingTeamValue('');
-  }
-
-  function moveTeam(teamId, direction) {
-    if (!activePool) return;
-
-    updatePool(activePool.id, (pool) => {
-      const oldIndex = pool.teams.findIndex((team) => team.id === teamId);
-      if (oldIndex === -1) return pool;
-
-      const newIndex = direction === 'up' ? oldIndex - 1 : oldIndex + 1;
-      if (newIndex < 0 || newIndex >= pool.teams.length) return pool;
-
-      return {
-        ...pool,
-        teams: arrayMove(pool.teams, oldIndex, newIndex),
-      };
-    });
-  }
-
-  function handleTeamDragEnd(event) {
-    if (!activePool || !event.over || event.active.id === event.over.id) return;
-
-    updatePool(activePool.id, (pool) => {
-      const oldIndex = pool.teams.findIndex((team) => team.id === event.active.id);
-      const newIndex = pool.teams.findIndex((team) => team.id === event.over.id);
-
-      if (oldIndex === -1 || newIndex === -1) return pool;
-
-      return {
-        ...pool,
-        teams: arrayMove(pool.teams, oldIndex, newIndex),
-      };
-    });
-  }
-
-  function handleMatchScoreChange(matchId, field, value) {
-    if (!activePool) return;
-
-    const sanitized = value === '' ? '' : String(Math.max(0, Number(value) || 0));
-
-    updatePool(activePool.id, (pool) => ({
-      ...pool,
-      matches: pool.matches.map((match) =>
-          match.id === matchId ? { ...match, [field]: sanitized } : match
-      ),
-    }));
-  }
-
-  function handleOptimizeMatches() {
-    if (!activePool) return;
-
-    updatePool(activePool.id, (pool) => ({
-      ...pool,
-      matches: optimizeMatchOrder(pool.matches),
-    }));
-  }
-
-  function getTeamNameById(teamId) {
-    return allTeams.find((team) => team.id === teamId)?.name || '';
   }
 
   function handleAddSerpentinRow(poolId) {
@@ -480,13 +490,25 @@ function App() {
     }));
   }
 
-  function handleChangeSerpentinValue(poolId, entryId, value) {
-    setSerpentin((prev) => ({
-      ...prev,
-      [poolId]: (prev[poolId] || []).map((entry) =>
-          entry.id === entryId ? { ...entry, value } : entry
-      ),
-    }));
+  function handleChangeSerpentinValue(poolId, entryId, teamId) {
+    setSerpentin((prev) => {
+      const next = {};
+
+      Object.keys(prev).forEach((key) => {
+        next[key] = (prev[key] || []).map((entry) => {
+          if (teamId && entry.value === teamId) {
+            return { ...entry, value: '' };
+          }
+          return entry;
+        });
+      });
+
+      next[poolId] = (next[poolId] || []).map((entry) =>
+          entry.id === entryId ? { ...entry, value: teamId } : entry
+      );
+
+      return next;
+    });
   }
 
   function handleSerpentinDragEnd(poolId, event) {
@@ -506,6 +528,40 @@ function App() {
     });
   }
 
+  function handleMatchScoreChange(matchId, field, value) {
+    if (!activePool) return;
+
+    const sanitized = value === '' ? '' : String(Math.max(0, Number(value) || 0));
+
+    setPools((prev) =>
+        prev.map((pool) =>
+            pool.id !== activePool.id
+                ? pool
+                : {
+                  ...pool,
+                  matches: pool.matches.map((match) =>
+                      match.id === matchId ? { ...match, [field]: sanitized } : match
+                  ),
+                }
+        )
+    );
+  }
+
+  function handleOptimizeMatches() {
+    if (!activePool) return;
+
+    setPools((prev) =>
+        prev.map((pool) =>
+            pool.id !== activePool.id
+                ? pool
+                : {
+                  ...pool,
+                  matches: optimizeMatchOrder(pool.matches),
+                }
+        )
+    );
+  }
+
   async function handleImportFile(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -521,12 +577,11 @@ function App() {
 
     try {
       const imported = await importTournamentFile(file);
-      setPools(imported.pools);
-      setSerpentin(imported.serpentin);
-      setActiveTab(imported.activeTab);
-      setFinalStage(createEmptyFinalStage());
-      setEditingPoolId(null);
-      setEditingTeamId(null);
+      setBaseTeams(imported.baseTeams || []);
+      setPools(imported.pools || []);
+      setSerpentin(imported.serpentin || {});
+      setActiveTab(imported.activeTab || 'base');
+      setFinalStage(imported.finalStage || createEmptyFinalStage());
     } catch (error) {
       console.error(error);
       alert("Impossible d'importer ce fichier.");
@@ -546,13 +601,13 @@ function App() {
 
     if (!confirmed) return;
 
-    localStorage.removeItem('matrice-padel-v3');
+    localStorage.removeItem('matrice-padel-v7');
     window.location.reload();
   }
 
-  function handleAssignFinalSlot(slotIndex, teamId) {
+  function handleQuarterTeamChange(matchIndex, field, teamId) {
     setFinalStage((prev) =>
-        syncFinalStageWithTeams(assignTeamToFinalSlot(prev, slotIndex, teamId), allTeams)
+        syncFinalStageWithTeams(assignQuarterTeam(prev, matchIndex, field, teamId), allTeams)
     );
   }
 
@@ -572,14 +627,21 @@ function App() {
             <p className="badge">Matrice PADEL</p>
             <h1>Gestion des matchs et classement automatique</h1>
             <p className="subtitle">
-              Import XLSX / CSV, sauvegarde locale, drag & drop, serpentin, poules,
-              phase finale et classement final.
+              Import XLSX / CSV, base joueurs, serpentin manuel, poules automatiques depuis le serpentin, phase finale et classement final.
             </p>
           </div>
         </header>
 
         <section className="tabs-card">
           <div className="tabs">
+            <button
+                type="button"
+                className={`tab-button ${activeTab === 'base' ? 'active' : ''}`}
+                onClick={() => setActiveTab('base')}
+            >
+              Base
+            </button>
+
             <button
                 type="button"
                 className={`tab-button ${activeTab === 'serpentin' ? 'active' : ''}`}
@@ -643,14 +705,20 @@ function App() {
                 Importer XLSX / CSV
               </button>
 
-              <button type="button" onClick={() => exportPoolsToCSV(pools, serpentin)}>
+              <button
+                  type="button"
+                  onClick={() => exportTournamentToCSV(baseTeams, pools, serpentin)}
+              >
                 <FaFileCsv />
-                CSV
+                Exporter CSV
               </button>
 
-              <button type="button" onClick={() => exportPoolsToXLSX(pools, serpentin)}>
+              <button
+                  type="button"
+                  onClick={() => exportTournamentToXLSX(baseTeams, pools, serpentin)}
+              >
                 <FaFileExcel />
-                XLSX
+                Exporter XLSX
               </button>
 
               <button type="button" className="danger" onClick={handleResetLocalData}>
@@ -661,54 +729,71 @@ function App() {
           </div>
         </section>
 
-        {activeTab === 'serpentin' ? (
+        {activeTab === 'base' ? (
+            <section className="card full-width">
+              <h2>Base équipes / joueurs</h2>
+              <p className="note">
+                Cette page regroupe toutes les équipes importées, y compris les têtes de poule ou équipes hors poules.
+              </p>
+
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                  <tr>
+                    <th>Équipe</th>
+                    <th>Nom affiché</th>
+                    <th>Joueur 1</th>
+                    <th>Rang 1</th>
+                    <th>Joueur 2</th>
+                    <th>Rang 2</th>
+                    <th>Rang cumulé</th>
+                  </tr>
+                  </thead>
+                  <tbody>
+                  {allTeams.length === 0 ? (
+                      <tr>
+                        <td colSpan="7">Aucune donnée importée pour le moment.</td>
+                      </tr>
+                  ) : (
+                      allTeams.map((team) => (
+                          <tr key={team.id}>
+                            <td>{team.number}</td>
+                            <td>{team.name}</td>
+                            <td>{team.players?.[0]?.name || ''}</td>
+                            <td>{team.players?.[0]?.rank ? formatRank(team.players[0].rank) : ''}</td>
+                            <td>{team.players?.[1]?.name || ''}</td>
+                            <td>{team.players?.[1]?.rank ? formatRank(team.players[1].rank) : ''}</td>
+                            <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
+                          </tr>
+                      ))
+                  )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+        ) : activeTab === 'serpentin' ? (
             <section className="card full-width">
               <h2>Serpentin</h2>
               <p className="note">
-                Tu peux renommer une poule, la supprimer, ajouter des lignes et
-                réordonner le serpentin par glisser-déposer.
+                L’arbitre place ici les équipes manuellement. Les poules se remplissent automatiquement à partir de ces choix.
               </p>
 
               <div className="serpentin-grid">
                 {pools.map((pool) => (
                     <div key={pool.id} className="serpentin-column">
                       <div className="pool-header">
-                        {editingPoolId === pool.id ? (
-                            <>
-                              <input
-                                  type="text"
-                                  value={editingPoolValue}
-                                  onChange={(event) => setEditingPoolValue(event.target.value)}
-                              />
-                              <button type="button" onClick={() => handleSavePoolEdit(pool.id)}>
-                                Enregistrer
-                              </button>
-                            </>
-                        ) : (
-                            <>
-                              <h3>{pool.name}</h3>
+                        <h3>{pool.name}</h3>
 
-                              <div className="pool-header-actions">
-                                <button
-                                    type="button"
-                                    className="icon-btn"
-                                    title="Renommer"
-                                    onClick={() => handleStartPoolEdit(pool)}
-                                >
-                                  <FaCog />
-                                </button>
-
-                                <button
-                                    type="button"
-                                    className="danger small-btn"
-                                    title="Supprimer la poule"
-                                    onClick={() => handleDeletePool(pool.id)}
-                                >
-                                  <FaTrash />
-                                </button>
-                              </div>
-                            </>
-                        )}
+                        <div className="pool-header-actions">
+                          <button
+                              type="button"
+                              className="danger small-btn"
+                              title="Supprimer la poule"
+                              onClick={() => handleDeletePool(pool.id)}
+                          >
+                            <FaTrash />
+                          </button>
+                        </div>
                       </div>
 
                       <DndContext
@@ -726,6 +811,8 @@ function App() {
                                     key={entry.id}
                                     entry={entry}
                                     index={index}
+                                    baseTeams={allTeams}
+                                    getTeamLabelById={getTeamLabelById}
                                     onChange={(value) =>
                                         handleChangeSerpentinValue(pool.id, entry.id, value)
                                     }
@@ -749,36 +836,8 @@ function App() {
                 <div>
                   <h2>Phase finale</h2>
                   <p className="note">
-                    Place manuellement les équipes dans les 8 cases. Les gagnants avancent
-                    automatiquement vers les demi-finales, la finale et la petite finale.
+                    Sélectionne qui joue contre qui, puis saisis les scores pour faire avancer automatiquement les vainqueurs.
                   </p>
-                </div>
-              </div>
-
-              <div className="final-slots-panel">
-                <h3>Placement des équipes</h3>
-
-                <div className="final-slots-grid">
-                  {finalStage.slots.map((slot, index) => (
-                      <div key={slot.id} className="final-slot-card">
-                        <label>{slot.label}</label>
-                        <select
-                            value={slot.teamId}
-                            onChange={(event) => handleAssignFinalSlot(index, event.target.value)}
-                        >
-                          <option value="">-- Sélectionner une équipe --</option>
-                          {rankedPools.map((pool) => (
-                              <optgroup key={pool.id} label={pool.name}>
-                                {pool.ranking.map((teamRow, teamIndex) => (
-                                    <option key={teamRow.teamId} value={teamRow.teamId}>
-                                      {pool.name} #{teamIndex + 1} — {teamRow.teamName}
-                                    </option>
-                                ))}
-                              </optgroup>
-                          ))}
-                        </select>
-                      </div>
-                  ))}
                 </div>
               </div>
 
@@ -791,7 +850,13 @@ function App() {
                           key={match.id}
                           title={`Quart ${index + 1}`}
                           match={match}
+                          editableTeams={true}
+                          allGroups={finalOptionGroups}
                           getTeamNameById={getTeamNameById}
+                          getTeamLabelById={getTeamLabelById}
+                          onTeamChange={(field, value) =>
+                              handleQuarterTeamChange(index, field, value)
+                          }
                           onScoreChange={(field, value) =>
                               handleFinalMatchScore('quarterFinals', index, field, value)
                           }
@@ -808,7 +873,9 @@ function App() {
                           title={`Demi ${index + 1}`}
                           match={match}
                           accent="accent-blue"
+                          allGroups={finalOptionGroups}
                           getTeamNameById={getTeamNameById}
+                          getTeamLabelById={getTeamLabelById}
                           onScoreChange={(field, value) =>
                               handleFinalMatchScore('semiFinals', index, field, value)
                           }
@@ -817,27 +884,67 @@ function App() {
                 </div>
 
                 <div className="bracket-column bracket-column-finals">
-                  <div className="bracket-column-title">Finales</div>
-
-                  <FinalMatchCard
-                      title="Petite finale"
-                      match={finalStage.thirdPlace}
-                      accent="accent-bronze"
-                      getTeamNameById={getTeamNameById}
-                      onScoreChange={(field, value) =>
-                          handleFinalMatchScore('thirdPlace', 0, field, value)
-                      }
-                  />
+                  <div className="bracket-column-title">Finale</div>
 
                   <FinalMatchCard
                       title="Finale"
                       match={finalStage.final}
                       accent="accent-gold"
+                      allGroups={finalOptionGroups}
                       getTeamNameById={getTeamNameById}
+                      getTeamLabelById={getTeamLabelById}
                       onScoreChange={(field, value) =>
                           handleFinalMatchScore('final', 0, field, value)
                       }
                   />
+                </div>
+              </div>
+
+              <div className="card" style={{ marginTop: '1.5rem' }}>
+                <h2>Cumuls points poules + phase finale</h2>
+                <p className="note">
+                  Ce tableau additionne tous les matchs joués en poules et en phase finale pour aider au départage si nécessaire.
+                </p>
+
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Équipe</th>
+                      <th>Rang cumulé</th>
+                      <th>J</th>
+                      <th>V</th>
+                      <th>D</th>
+                      <th>PF</th>
+                      <th>PA</th>
+                      <th>Diff</th>
+                      <th>Total</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {combinedPointsRanking.length === 0 ? (
+                        <tr>
+                          <td colSpan="10">Aucun cumul disponible pour le moment.</td>
+                        </tr>
+                    ) : (
+                        combinedPointsRanking.map((team, index) => (
+                            <tr key={team.teamId}>
+                              <td>{index + 1}</td>
+                              <td>{team.teamName}</td>
+                              <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
+                              <td>{team.played}</td>
+                              <td>{team.wins}</td>
+                              <td>{team.losses}</td>
+                              <td>{team.pointsFor}</td>
+                              <td>{team.pointsAgainst}</td>
+                              <td>{team.diff > 0 ? `+${team.diff}` : team.diff}</td>
+                              <td>{team.totalScore > 0 ? `+${team.totalScore}` : team.totalScore}</td>
+                            </tr>
+                        ))
+                    )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </section>
@@ -845,8 +952,7 @@ function App() {
             <section className="card full-width">
               <h2>Classement final</h2>
               <p className="note">
-                Le top 4 vient directement de la phase finale. Les places 5 à 8 sont
-                ordonnées ici selon l’élimination en quart puis le classement de poule.
+                Le classement final affiche l’ordre de sortie du tournoi et le rang cumulé des équipes.
               </p>
 
               <div className="table-wrapper">
@@ -855,45 +961,25 @@ function App() {
                   <tr>
                     <th>Place</th>
                     <th>Équipe</th>
-                    <th>Motif</th>
-                    <th>Poule</th>
-                    <th>Rang poule</th>
+                    <th>Rang cumulé</th>
                   </tr>
                   </thead>
                   <tbody>
                   {finalRanking.length === 0 ? (
                       <tr>
-                        <td colSpan="5">Aucun classement final disponible pour le moment.</td>
+                        <td colSpan="3">Aucun classement final disponible pour le moment.</td>
                       </tr>
                   ) : (
                       finalRanking.map((row) => (
                           <tr key={`${row.position}-${row.teamId}`}>
                             <td>{row.position}</td>
                             <td>{row.teamName}</td>
-                            <td>{row.reason}</td>
-                            <td>{row.poolName}</td>
-                            <td>{row.poolRank}</td>
+                            <td>{row.cumulativeRank ? formatRank(row.cumulativeRank) : ''}</td>
                           </tr>
                       ))
                   )}
                   </tbody>
                 </table>
-              </div>
-
-              <div className="global-summary-grid">
-                {rankedPools.map((pool) => (
-                    <div key={pool.id} className="summary-card">
-                      <h3>{pool.name}</h3>
-                      <ol>
-                        {pool.ranking.map((team, index) => (
-                            <li key={team.teamId}>
-                              #{index + 1} — {team.teamName} ({team.wins}V / {team.losses}D /{' '}
-                              {team.totalScore > 0 ? `+${team.totalScore}` : team.totalScore})
-                            </li>
-                        ))}
-                      </ol>
-                    </div>
-                ))}
               </div>
             </section>
         ) : (
@@ -901,48 +987,25 @@ function App() {
               <section className="card">
                 <h2>{activePool?.name} — Équipes</h2>
 
-                <form className="team-form" onSubmit={handleAddTeam}>
-                  <input
-                      type="text"
-                      placeholder="Nom de l’équipe"
-                      value={newTeamName}
-                      onChange={(event) => setNewTeamName(event.target.value)}
-                  />
-                  <button type="submit">Ajouter</button>
-                </form>
-
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleTeamDragEnd}
-                >
-                  <SortableContext
-                      items={(activePool?.teams || []).map((team) => team.id)}
-                      strategy={verticalListSortingStrategy}
-                  >
+                {activePool?.teams.length === 0 ? (
+                    <p className="empty-text">Aucune équipe placée dans cette poule via le serpentin.</p>
+                ) : (
                     <div className="team-list">
-                      {activePool?.teams.length === 0 ? (
-                          <p className="empty-text">Aucune équipe dans cette poule.</p>
-                      ) : (
-                          activePool.teams.map((team, index) => (
-                              <SortableTeamRow
-                                  key={team.id}
-                                  team={team}
-                                  index={index}
-                                  isEditing={editingTeamId === team.id}
-                                  editingValue={editingTeamValue}
-                                  onEditValueChange={setEditingTeamValue}
-                                  onStartEdit={() => handleStartTeamEdit(team)}
-                                  onSaveEdit={() => handleSaveTeamEdit(team.id)}
-                                  onDelete={() => handleDeleteTeam(team.id)}
-                                  onMoveUp={() => moveTeam(team.id, 'up')}
-                                  onMoveDown={() => moveTeam(team.id, 'down')}
-                              />
-                          ))
-                      )}
+                      {activePool.teams.map((team, index) => (
+                          <div key={team.id} className="team-item team-item-advanced">
+                            <div className="team-main">
+                              <span className="team-index">{index + 1}.</span>
+                              <span className="team-name">
+                        {team.name}
+                                {team.cumulativeRank
+                                    ? ` — Rang cumulé: ${formatRank(team.cumulativeRank)}`
+                                    : ''}
+                      </span>
+                            </div>
+                          </div>
+                      ))}
                     </div>
-                  </SortableContext>
-                </DndContext>
+                )}
 
                 <div className="actions">
                   <button type="button" onClick={handleOptimizeMatches}>
@@ -956,7 +1019,7 @@ function App() {
 
                 {activePool?.matches.length === 0 ? (
                     <p className="empty-text">
-                      Ajoute au moins 2 équipes pour générer des matchs.
+                      Place au moins 2 équipes dans le serpentin pour générer des matchs.
                     </p>
                 ) : (
                     <div className="matches">
@@ -1012,6 +1075,7 @@ function App() {
                     <tr>
                       <th>#</th>
                       <th>Équipe</th>
+                      <th>Rang cumulé</th>
                       <th>J</th>
                       <th>V</th>
                       <th>D</th>
@@ -1022,28 +1086,29 @@ function App() {
                     </tr>
                     </thead>
                     <tbody>
-                    {ranking.map((team, index) => (
-                        <tr key={team.teamId}>
-                          <td>{index + 1}</td>
-                          <td>{team.teamName}</td>
-                          <td>{team.played}</td>
-                          <td>{team.wins}</td>
-                          <td>{team.losses}</td>
-                          <td>{team.pointsFor}</td>
-                          <td>{team.pointsAgainst}</td>
-                          <td>{team.diff > 0 ? `+${team.diff}` : team.diff}</td>
-                          <td>{team.totalScore > 0 ? `+${team.totalScore}` : team.totalScore}</td>
+                    {ranking.length === 0 ? (
+                        <tr>
+                          <td colSpan="10">Aucun classement disponible pour le moment.</td>
                         </tr>
-                    ))}
+                    ) : (
+                        ranking.map((team, index) => (
+                            <tr key={team.teamId}>
+                              <td>{index + 1}</td>
+                              <td>{team.teamName}</td>
+                              <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
+                              <td>{team.played}</td>
+                              <td>{team.wins}</td>
+                              <td>{team.losses}</td>
+                              <td>{team.pointsFor}</td>
+                              <td>{team.pointsAgainst}</td>
+                              <td>{team.diff > 0 ? `+${team.diff}` : team.diff}</td>
+                              <td>{team.totalScore > 0 ? `+${team.totalScore}` : team.totalScore}</td>
+                            </tr>
+                        ))
+                    )}
                     </tbody>
                   </table>
                 </div>
-
-                <p className="note">
-                  Les matchs déjà saisis sont conservés quand tu renommes ou réorganises
-                  les équipes. Si tu ajoutes ou supprimes une équipe, seuls les matchs
-                  nécessaires sont recalculés.
-                </p>
               </section>
             </main>
         )}

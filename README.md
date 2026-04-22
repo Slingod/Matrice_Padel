@@ -81,7 +81,7 @@ Pour chaque équipe :
 - placement manuel des équipes dans le tableau final
 - quarts de finale
 - demi-finales
-- petite finale
+
 - finale
 - propagation automatique des gagnants dans le tableau
 
