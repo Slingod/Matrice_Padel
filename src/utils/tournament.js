@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'matrice-padel-v3';
+const STORAGE_KEY = 'matrice-padel-v6';
 
 function uid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -8,10 +8,29 @@ function uid() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
-export function createTeam(name) {
+export function createPlayer(name, rank = 0, slot = '') {
     return {
         id: uid(),
+        slot,
         name: String(name || '').trim(),
+        rank: Number(rank) || 0,
+    };
+}
+
+export function createTeam(data) {
+    const players = Array.isArray(data?.players) ? data.players : [];
+    const cumulativeRank =
+        Number(data?.cumulativeRank) ||
+        players.reduce((sum, player) => sum + (Number(player.rank) || 0), 0);
+
+    return {
+        id: data?.id || uid(),
+        number: data?.number || '',
+        name: String(data?.name || '').trim(),
+        fullName: String(data?.fullName || data?.name || '').trim(),
+        matchLabel: String(data?.matchLabel || data?.name || '').trim(),
+        players,
+        cumulativeRank,
     };
 }
 
@@ -32,10 +51,8 @@ export function createMatch(teamAId, teamBId) {
     };
 }
 
-export function createPool(name, teamNames = []) {
-    const teams = teamNames
-        .map((teamName) => createTeam(teamName))
-        .filter((team) => team.name);
+export function createPool(name, teamItems = []) {
+    const teams = teamItems.map((team) => createTeam(team)).filter((team) => team.name);
 
     return {
         id: uid(),
@@ -47,25 +64,21 @@ export function createPool(name, teamNames = []) {
 
 export function createDefaultState() {
     const pools = [
-        createPool('Poule A', [
-            'KLIFA & POUCHAIN',
-            'FERNAND & GHYSELS',
-            'PATRY & SALFATI',
-            'ODEANT & PARFONDIN',
-        ]),
+        createPool('Poule A', []),
         createPool('Poule B', []),
         createPool('Poule C', []),
     ];
 
     const serpentin = {};
-    serpentin[pools[0].id] = ['1', '6', '7', '12'].map(createSerpentinEntry);
-    serpentin[pools[1].id] = ['2', '5', '8', '11'].map(createSerpentinEntry);
-    serpentin[pools[2].id] = ['3', '4', '9', '10'].map(createSerpentinEntry);
+    pools.forEach((pool) => {
+        serpentin[pool.id] = [];
+    });
 
     return {
+        baseTeams: [],
         pools,
         serpentin,
-        activeTab: 'serpentin',
+        activeTab: 'base',
         finalStage: null,
     };
 }
@@ -84,6 +97,7 @@ function countConsecutiveAppearances(schedule, teamId) {
     for (let i = schedule.length - 1; i >= 0; i -= 1) {
         const match = schedule[i];
         const appears = match.teamAId === teamId || match.teamBId === teamId;
+
         if (!appears) break;
         count += 1;
     }
@@ -180,6 +194,9 @@ export function computeRanking(teams, matches) {
     const ranking = teams.map((team) => ({
         teamId: team.id,
         teamName: team.name,
+        fullName: team.fullName,
+        cumulativeRank: team.cumulativeRank || 0,
+        players: team.players || [],
         played: 0,
         wins: 0,
         losses: 0,
@@ -263,12 +280,37 @@ export function loadAppState() {
             return createDefaultState();
         }
 
+        const baseTeams = Array.isArray(parsed.baseTeams)
+            ? parsed.baseTeams.map((team) =>
+                createTeam({
+                    id: team.id,
+                    number: team.number,
+                    name: team.name,
+                    fullName: team.fullName,
+                    matchLabel: team.matchLabel,
+                    players: Array.isArray(team.players)
+                        ? team.players.map((player) => createPlayer(player.name, player.rank, player.slot))
+                        : [],
+                    cumulativeRank: team.cumulativeRank,
+                })
+            )
+            : [];
+
         const pools = parsed.pools.map((pool) => {
             const teams = Array.isArray(pool.teams)
-                ? pool.teams.map((team) => ({
-                    id: team.id || uid(),
-                    name: String(team.name || ''),
-                }))
+                ? pool.teams.map((team) =>
+                    createTeam({
+                        id: team.id,
+                        number: team.number,
+                        name: team.name,
+                        fullName: team.fullName,
+                        matchLabel: team.matchLabel,
+                        players: Array.isArray(team.players)
+                            ? team.players.map((player) => createPlayer(player.name, player.rank, player.slot))
+                            : [],
+                        cumulativeRank: team.cumulativeRank,
+                    })
+                )
                 : [];
 
             const matches = Array.isArray(pool.matches)
@@ -307,15 +349,17 @@ export function loadAppState() {
         });
 
         return {
+            baseTeams,
             pools,
             serpentin,
             activeTab:
+                parsed.activeTab === 'base' ||
                 parsed.activeTab === 'serpentin' ||
                 parsed.activeTab === 'finals' ||
                 parsed.activeTab === 'final-ranking' ||
                 pools.some((pool) => pool.id === parsed.activeTab)
                     ? parsed.activeTab
-                    : 'serpentin',
+                    : 'base',
             finalStage: parsed.finalStage || null,
         };
     } catch {

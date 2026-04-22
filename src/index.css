@@ -70,11 +70,6 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.12);
 }
 
-select optgroup,
-select option {
-  color: #111827;
-}
-
 #root {
   width: 100%;
 }
@@ -315,8 +310,8 @@ h1 {
 }
 
 .match-team.winner {
-  background: rgba(22, 163, 74, 0.18);
-  border: 1px solid rgba(34, 197, 94, 0.45);
+  background: rgba(255 , 44, 44, 0.18);
+  border: 1px solid rgba(255, 44, 44, 0.45);
 }
 
 .match-team.draw {
@@ -413,49 +408,7 @@ tbody tr:hover {
   margin-bottom: 1.25rem;
 }
 
-.final-slots-panel {
-  margin-bottom: 1.5rem;
-  padding: 1.1rem;
-  border-radius: 20px;
-  background: rgba(30, 41, 59, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.final-slots-panel h3 {
-  margin: 0 0 1rem;
-  color: #93c5fd;
-}
-
-.final-slots-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-  gap: 0.9rem;
-}
-
-.final-slot-card {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.85rem;
-  border-radius: 16px;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.final-slot-card label {
-  color: #93c5fd;
-  font-size: 0.92rem;
-  font-weight: 700;
-}
-
-.final-slot-card select {
-  width: 100%;
-  border: 1px solid #334155;
-  background: #0b1220;
-  color: #f5f7fb;
-  border-radius: 12px;
-  padding: 0.8rem 0.9rem;
-  outline: none;
-}
+/* Phase finale */
 
 .bracket-board {
   display: grid;
@@ -474,7 +427,7 @@ tbody tr:hover {
 }
 
 .bracket-column-finals {
-  padding-top: 6rem;
+  padding-top: 10rem;
 }
 
 .bracket-column-title {
@@ -507,10 +460,6 @@ tbody tr:hover {
   border-color: rgba(96, 165, 250, 0.28);
 }
 
-.bracket-match.accent-bronze {
-  border-color: rgba(251, 146, 60, 0.28);
-}
-
 .bracket-match-header {
   font-size: 0.92rem;
   font-weight: 800;
@@ -531,8 +480,8 @@ tbody tr:hover {
 }
 
 .bracket-team-row.winner {
-  background: rgba(22, 163, 74, 0.16);
-  border: 1px solid rgba(34, 197, 94, 0.45);
+  background: rgba(255, 44, 44, 0.16);
+  border: 1px solid rgba(255, 44, 44, 0.45);
 }
 
 .bracket-team-name {
@@ -549,6 +498,22 @@ tbody tr:hover {
   padding: 0.65rem 0.5rem;
 }
 
+.bracket-team-row select {
+  width: 100%;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: #f8fafc;
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
+  outline: none;
+}
+
+.bracket-team-row select option,
+.bracket-team-row select optgroup {
+  background: #0b1220;
+  color: #f8fafc;
+}
+
 .bracket-vs {
   text-align: center;
   font-size: 0.82rem;
@@ -557,6 +522,8 @@ tbody tr:hover {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+
+/* Résumé final */
 
 .global-summary-grid {
   display: grid;
@@ -588,11 +555,9 @@ tbody tr:hover {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 1200px) {
-  .final-slots-grid {
-    grid-template-columns: repeat(3, minmax(180px, 1fr));
-  }
+/* Responsive */
 
+@media (max-width: 1200px) {
   .bracket-board {
     grid-template-columns: 1fr;
   }
@@ -646,10 +611,6 @@ tbody tr:hover {
   .vs,
   .match-number {
     text-align: left;
-  }
-
-  .final-slots-grid {
-    grid-template-columns: 1fr;
   }
 
   .bracket-team-row {
