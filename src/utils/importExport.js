@@ -3,9 +3,7 @@ import { computeRanking, createPool, createSerpentinEntry } from './tournament';
 import { createEmptyFinalStage } from './finalStage';
 
 function sanitizeSheetName(name) {
-    return String(name || 'Feuille')
-        .replace(/[\\/?*[\]:]/g, '')
-        .slice(0, 31) || 'Feuille';
+    return String(name || 'Feuille').replace(/[\\/?*\[\]:]/g, '').slice(0, 31) || 'Feuille';
 }
 
 function normalizeText(value) {
@@ -19,19 +17,12 @@ function normalizeHeader(value) {
         .toLowerCase();
 }
 
-function formatRank(value) {
-    const number = Number(value) || 0;
-    return number.toLocaleString('fr-FR');
-}
-
 function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-
     link.href = url;
     link.download = filename;
     link.click();
-
     URL.revokeObjectURL(url);
 }
 
@@ -59,20 +50,19 @@ function parseRowsFromSheet(sheet) {
 
     if (!matrix.length) return [];
 
-    const headerRowIndex = matrix.findIndex((row) =>
-        Array.isArray(row) &&
-        row.some((cell) => {
-            const normalized = normalizeHeader(cell);
-            return normalized === 'equipe' || normalized === 'joueur' || normalized === 'nom';
-        })
+    const headerRowIndex = matrix.findIndex(
+        (row) =>
+            Array.isArray(row) &&
+            row.some((cell) => {
+                const normalized = normalizeHeader(cell);
+                return normalized === 'equipe' || normalized === 'joueur' || normalized === 'nom';
+            })
     );
 
     if (headerRowIndex === -1) return [];
 
     const rawHeaders = matrix[headerRowIndex];
-    const headers = rawHeaders.map((header, index) =>
-        normalizeText(header) || `col_${index}`
-    );
+    const headers = rawHeaders.map((header, index) => normalizeText(header) || `col_${index}`);
 
     return matrix
         .slice(headerRowIndex + 1)
@@ -87,15 +77,11 @@ function parseRowsFromSheet(sheet) {
 }
 
 function findValue(row, aliases) {
-    const entries = Object.entries(row);
-
-    for (const [key, value] of entries) {
-        const normalizedKey = normalizeHeader(key);
-        if (aliases.includes(normalizedKey)) {
+    for (const [key, value] of Object.entries(row)) {
+        if (aliases.includes(normalizeHeader(key))) {
             return value;
         }
     }
-
     return '';
 }
 
@@ -103,25 +89,12 @@ function parseParticipantsRows(rows) {
     const grouped = {};
 
     rows.forEach((row) => {
-        const rawTeam =
-            findValue(row, ['equipe']) ||
-            findValue(row, ['team']) ||
-            '';
-
-        const rawSlot =
-            findValue(row, ['joueur']) ||
-            findValue(row, ['player']) ||
-            '';
-
-        const rawName =
-            findValue(row, ['nom']) ||
-            findValue(row, ['name']) ||
-            '';
-
+        const rawTeam = findValue(row, ['equipe']) || findValue(row, ['team']) || '';
+        const rawSlot = findValue(row, ['joueur']) || findValue(row, ['player']) || '';
+        const rawName = findValue(row, ['nom']) || findValue(row, ['name']) || '';
         const rawRank =
             findValue(row, ['rang']) ||
             findValue(row, ['rank']) ||
-            findValue(row, ['rang combine']) ||
             findValue(row, ['rang combine']) ||
             '';
 
@@ -137,10 +110,7 @@ function parseParticipantsRows(rows) {
         const teamLabel = teamNumber ? `Équipe ${teamNumber}` : teamName;
 
         if (!grouped[teamLabel]) {
-            grouped[teamLabel] = {
-                number: teamLabel,
-                players: [],
-            };
+            grouped[teamLabel] = { number: teamLabel, players: [] };
         }
 
         grouped[teamLabel].players.push({
@@ -154,10 +124,7 @@ function parseParticipantsRows(rows) {
     return Object.values(grouped)
         .map((team, index) => {
             const players = [...team.players].sort((a, b) => a.slot.localeCompare(b.slot));
-            const cumulativeRank = players.reduce(
-                (sum, player) => sum + (Number(player.rank) || 0),
-                0
-            );
+            const cumulativeRank = players.reduce((sum, player) => sum + (Number(player.rank) || 0), 0);
 
             return {
                 id: `team-import-${index + 1}-${Date.now()}`,
@@ -194,7 +161,6 @@ function buildSerpentinRows(pools, serpentinMap, teamMap) {
     pools.forEach((pool) => {
         (serpentinMap[pool.id] || []).forEach((entry, index) => {
             const team = teamMap.get(entry.value);
-
             rows.push({
                 Poule: pool.name,
                 Position: index + 1,
@@ -210,18 +176,13 @@ function buildSerpentinRows(pools, serpentinMap, teamMap) {
 
 function buildPoolRankingRows(pool) {
     const ranking = computeRanking(pool.teams, pool.matches);
-
     const rankingMap = new Map();
     ranking.forEach((row, index) => {
-        rankingMap.set(row.teamId, {
-            position: index + 1,
-            ...row,
-        });
+        rankingMap.set(row.teamId, { position: index + 1, ...row });
     });
 
     return pool.teams.map((team) => {
         const stats = rankingMap.get(team.id);
-
         return {
             Classement: stats?.position ?? '',
             Équipe: team.name,
@@ -253,9 +214,6 @@ function buildPoolMatchRows(pool, getTeamNameById) {
                 Number.isFinite(scoreA) &&
                 Number.isFinite(scoreB);
 
-            const diffA = isValid ? scoreA - scoreB : '';
-            const diffB = isValid ? scoreB - scoreA : '';
-
             return {
                 Match: index + 1,
                 Rotation: match.round || 1,
@@ -264,8 +222,8 @@ function buildPoolMatchRows(pool, getTeamNameById) {
                 'Score 1': match.scoreA ?? '',
                 'Score 2': match.scoreB ?? '',
                 'Équipe 2': getTeamNameById(match.teamBId) || '',
-                Diff1: diffA,
-                Diff2: diffB,
+                Diff1: isValid ? scoreA - scoreB : '',
+                Diff2: isValid ? scoreB - scoreA : '',
             };
         });
 }
@@ -288,10 +246,7 @@ function groupMatchesByRound(matches) {
 
     return [...roundMap.entries()]
         .sort((a, b) => a[0] - b[0])
-        .map(([round, roundMatches]) => ({
-            round,
-            matches: roundMatches,
-        }));
+        .map(([round, roundMatches]) => ({ round, matches: roundMatches }));
 }
 
 function buildGlobalPlanning(pools, courtCount) {
@@ -389,6 +344,30 @@ function buildFinalStageRows(finalStage, getTeamNameById) {
         });
     });
 
+    if (finalStage.thirdPlaceEnabled) {
+        rows.push({
+            Phase: 'Petite finale',
+            Match: '3e / 4e place',
+            'Équipe 1': getTeamNameById(finalStage.thirdPlace.teamAId) || '',
+            'Score 1': finalStage.thirdPlace.scoreA ?? '',
+            'Score 2': finalStage.thirdPlace.scoreB ?? '',
+            'Équipe 2': getTeamNameById(finalStage.thirdPlace.teamBId) || '',
+        });
+    }
+
+    if (finalStage.quarterPlacementEnabled) {
+        finalStage.placementSemis.forEach((match, index) => {
+            rows.push({
+                Phase: 'Classement 5-8',
+                Match: `Classement ${index + 1}`,
+                'Équipe 1': getTeamNameById(match.teamAId) || '',
+                'Score 1': match.scoreA ?? '',
+                'Score 2': match.scoreB ?? '',
+                'Équipe 2': getTeamNameById(match.teamBId) || '',
+            });
+        });
+    }
+
     rows.push({
         Phase: 'Finale',
         Match: 'Finale',
@@ -437,47 +416,36 @@ export function exportTournamentToCSV(
     const getTeamNameById = (teamId) => teamMap.get(teamId)?.name || '';
 
     const rows = [];
-
-    buildBaseRows(baseTeams).forEach((row) => {
-        rows.push({ Section: 'Base', ...row });
-    });
-
-    buildSerpentinRows(pools, serpentinMap, teamMap).forEach((row) => {
-        rows.push({ Section: 'Serpentin', ...row });
-    });
-
-    buildPlanningRows(pools, courtCount, getTeamNameById).forEach((row) => {
-        rows.push({ Section: 'Planning', ...row });
-    });
+    buildBaseRows(baseTeams).forEach((row) => rows.push({ Section: 'Base', ...row }));
+    buildSerpentinRows(pools, serpentinMap, teamMap).forEach((row) =>
+        rows.push({ Section: 'Serpentin', ...row })
+    );
+    buildPlanningRows(pools, courtCount, getTeamNameById).forEach((row) =>
+        rows.push({ Section: 'Planning', ...row })
+    );
 
     pools.forEach((pool) => {
-        buildPoolRankingRows(pool).forEach((row) => {
-            rows.push({ Section: `${pool.name} - Classement`, ...row });
-        });
-
-        buildPoolMatchRows(pool, getTeamNameById).forEach((row) => {
-            rows.push({ Section: `${pool.name} - Matchs`, ...row });
-        });
+        buildPoolRankingRows(pool).forEach((row) =>
+            rows.push({ Section: `${pool.name} - Classement`, ...row })
+        );
+        buildPoolMatchRows(pool, getTeamNameById).forEach((row) =>
+            rows.push({ Section: `${pool.name} - Matchs`, ...row })
+        );
     });
 
-    buildFinalStageRows(finalStage, getTeamNameById).forEach((row) => {
-        rows.push({ Section: 'Phase finale', ...row });
-    });
-
-    buildCombinedRows(combinedPointsRanking).forEach((row) => {
-        rows.push({ Section: 'Cumuls points', ...row });
-    });
-
-    buildFinalRankingRows(finalRanking).forEach((row) => {
-        rows.push({ Section: 'Classement final', ...row });
-    });
+    buildFinalStageRows(finalStage, getTeamNameById).forEach((row) =>
+        rows.push({ Section: 'Phase finale', ...row })
+    );
+    buildCombinedRows(combinedPointsRanking).forEach((row) =>
+        rows.push({ Section: 'Cumuls points', ...row })
+    );
+    buildFinalRankingRows(finalRanking).forEach((row) =>
+        rows.push({ Section: 'Classement final', ...row })
+    );
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const csv = XLSX.utils.sheet_to_csv(worksheet);
-    const blob = new Blob([`\uFEFF${csv}`], {
-        type: 'text/csv;charset=utf-8;',
-    });
-
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
     downloadBlob(blob, 'matrice-padel.csv');
 }
 
@@ -494,18 +462,12 @@ export function exportTournamentToXLSX(
     const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
     const getTeamNameById = (teamId) => teamMap.get(teamId)?.name || '';
 
-    XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.json_to_sheet(buildBaseRows(baseTeams)),
-        'Base'
-    );
-
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(buildBaseRows(baseTeams)), 'Base');
     XLSX.utils.book_append_sheet(
         workbook,
         XLSX.utils.json_to_sheet(buildSerpentinRows(pools, serpentinMap, teamMap)),
         'Serpentin'
     );
-
     XLSX.utils.book_append_sheet(
         workbook,
         XLSX.utils.json_to_sheet(buildPlanningRows(pools, courtCount, getTeamNameById)),
@@ -518,7 +480,6 @@ export function exportTournamentToXLSX(
             XLSX.utils.json_to_sheet(buildPoolRankingRows(pool)),
             sanitizeSheetName(`${pool.name} classement`)
         );
-
         XLSX.utils.book_append_sheet(
             workbook,
             XLSX.utils.json_to_sheet(buildPoolMatchRows(pool, getTeamNameById)),
@@ -531,13 +492,11 @@ export function exportTournamentToXLSX(
         XLSX.utils.json_to_sheet(buildFinalStageRows(finalStage, getTeamNameById)),
         'Phase finale'
     );
-
     XLSX.utils.book_append_sheet(
         workbook,
         XLSX.utils.json_to_sheet(buildCombinedRows(combinedPointsRanking)),
         'Cumuls points'
     );
-
     XLSX.utils.book_append_sheet(
         workbook,
         XLSX.utils.json_to_sheet(buildFinalRankingRows(finalRanking)),
@@ -556,8 +515,7 @@ export async function importTournamentFile(file) {
 
     if (extension === 'csv') {
         const firstSheetName = workbook.SheetNames[0];
-        const firstSheet = workbook.Sheets[firstSheetName];
-        rows = parseRowsFromSheet(firstSheet);
+        rows = parseRowsFromSheet(workbook.Sheets[firstSheetName]);
     } else {
         const participantsSheetName =
             workbook.SheetNames.find((name) => normalizeHeader(name) === 'participants') ||
@@ -571,12 +529,7 @@ export async function importTournamentFile(file) {
 
     const importedTeams = dedupeTeams(parseParticipantsRows(rows));
 
-    const pools = [
-        createPool('Poule A', []),
-        createPool('Poule B', []),
-        createPool('Poule C', []),
-    ];
-
+    const pools = [createPool('Poule A', []), createPool('Poule B', []), createPool('Poule C', [])];
     const serpentin = {};
     pools.forEach((pool) => {
         serpentin[pool.id] = [

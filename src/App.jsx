@@ -45,6 +45,7 @@ import {
   buildFinalRanking,
   createEmptyFinalStage,
   getDisplayWinner,
+  setFinalStageOption,
   syncFinalStageWithTeams,
   updateFinalStageMatch,
 } from './utils/finalStage';
@@ -197,7 +198,6 @@ function syncPoolsFromSerpentin(baseTeams, previousPools, serpentinMap) {
         .filter(Boolean);
 
     const uniqueIds = [...new Set(selectedIds)];
-
     const teams = uniqueIds.map((teamId) => teamMap.get(teamId)).filter(Boolean);
 
     return {
@@ -325,10 +325,7 @@ function groupMatchesByRound(matches) {
 
   return [...roundMap.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([round, roundMatches]) => ({
-        round,
-        matches: roundMatches,
-      }));
+      .map(([round, roundMatches]) => ({ round, matches: roundMatches }));
 }
 
 function buildGlobalPlanning(pools, courtCount) {
@@ -399,27 +396,29 @@ function shuffleArray(items) {
   return array;
 }
 
-function pairTeamsAvoidingSamePool(topSeeds, lowerSeeds) {
-  const tryPair = (tops, lowers, acc = []) => {
-    if (tops.length === 0) return acc;
-    const [currentTop, ...restTops] = tops;
+function pairSeedsWithOpponents(seedSlots, opponents) {
+  const recurse = (index, remainingOpponents, acc) => {
+    if (index >= seedSlots.length) return acc;
 
-    const preferred = lowers.filter(
-        (candidate) => !currentTop.poolId || !candidate.poolId || currentTop.poolId !== candidate.poolId
+    const seed = seedSlots[index];
+    const preferred = remainingOpponents.filter(
+        (candidate) => !seed.poolId || !candidate.poolId || seed.poolId !== candidate.poolId
     );
-    const fallback = lowers.filter((candidate) => !preferred.includes(candidate));
-    const orderedCandidates = [...preferred, ...fallback];
+    const ordered = [
+      ...preferred,
+      ...remainingOpponents.filter((item) => !preferred.includes(item)),
+    ];
 
-    for (const candidate of orderedCandidates) {
-      const nextLowers = lowers.filter((item) => item.teamId !== candidate.teamId);
-      const result = tryPair(restTops, nextLowers, [...acc, [currentTop, candidate]]);
+    for (const opponent of ordered) {
+      const nextRemaining = remainingOpponents.filter((item) => item.teamId !== opponent.teamId);
+      const result = recurse(index + 1, nextRemaining, [...acc, [seed, opponent]]);
       if (result) return result;
     }
 
     return null;
   };
 
-  return tryPair(topSeeds, lowerSeeds, []) || [];
+  return recurse(0, opponents, []) || [];
 }
 
 function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
@@ -428,6 +427,7 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
   const tsTeams = allTeams
       .filter((team) => !placedIds.has(team.id))
       .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999))
+      .slice(0, 2)
       .map((team, index) => ({
         teamId: team.id,
         teamName: team.name,
@@ -435,7 +435,7 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
         poolId: null,
         poolName: 'TS',
         type: 'ts',
-        sortKey: index,
+        label: `TS #${index + 1}`,
       }));
 
   const winners = rankedPools
@@ -447,10 +447,9 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
             poolId: pool.id,
             poolName: pool.name,
             type: 'winner',
-            sortKey: team.cumulativeRank || 999999999,
           }))
       )
-      .sort((a, b) => a.sortKey - b.sortKey);
+      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
 
   const seconds = rankedPools
       .flatMap((pool) =>
@@ -461,69 +460,56 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
             poolId: pool.id,
             poolName: pool.name,
             type: 'second',
-            sortKey: team.cumulativeRank || 999999999,
           }))
       )
-      .sort((a, b) => a.sortKey - b.sortKey);
+      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
 
-  const thirds = rankedPools
+  const extras = rankedPools
       .flatMap((pool) =>
-          pool.ranking.slice(2, 3).map((team) => ({
+          pool.ranking.slice(2).map((team) => ({
             teamId: team.teamId,
             teamName: team.teamName,
             cumulativeRank: team.cumulativeRank || 0,
             poolId: pool.id,
             poolName: pool.name,
-            type: 'third',
-            sortKey: team.cumulativeRank || 999999999,
+            type: 'extra',
           }))
       )
-      .sort((a, b) => a.sortKey - b.sortKey);
+      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
 
-  const entrants = [...tsTeams, ...winners, ...seconds, ...thirds].slice(0, 8);
+  const entrants = [...tsTeams, ...winners, ...seconds, ...extras].slice(0, 8);
+  if (entrants.length < 8) return [];
 
-  if (entrants.length < 2) {
-    return [];
-  }
+  const strongestTs = tsTeams[0] || null;
+  const secondTs = tsTeams[1] || null;
 
-  const topCandidates = [
-    ...tsTeams,
-    ...winners,
-    ...seconds,
-    ...thirds,
-  ].slice(0, 4);
+  const remainingWinners = winners.filter(
+      (item) => item.teamId !== strongestTs?.teamId && item.teamId !== secondTs?.teamId
+  );
 
-  const usedTopIds = new Set(topCandidates.map((item) => item.teamId));
-  const lowerCandidates = entrants.filter((item) => !usedTopIds.has(item.teamId));
+  const seedSlots = [
+    secondTs || remainingWinners.shift(),
+    remainingWinners.shift(),
+    remainingWinners.shift(),
+    strongestTs || remainingWinners.shift(),
+  ].filter(Boolean);
 
-  const shuffledTop = shuffleArray(topCandidates);
-  const shuffledLower = shuffleArray(lowerCandidates);
+  const usedSeedIds = new Set(seedSlots.map((item) => item.teamId));
+  const opponentPool = entrants.filter((item) => !usedSeedIds.has(item.teamId));
 
-  const pairs = pairTeamsAvoidingSamePool(shuffledTop, shuffledLower);
+  const secondPool = shuffleArray(opponentPool.filter((item) => item.type === 'second'));
+  const otherPool = shuffleArray(opponentPool.filter((item) => item.type !== 'second'));
+  const orderedOpponents = [...secondPool, ...otherPool].slice(0, seedSlots.length);
 
-  if (pairs.length > 0) {
-    return pairs.map(([teamA, teamB]) => ({
-      teamAId: teamA.teamId,
-      teamBId: teamB.teamId,
-      scoreA: '',
-      scoreB: '',
-    }));
-  }
+  const pairs = pairSeedsWithOpponents(seedSlots, orderedOpponents);
+  if (pairs.length !== seedSlots.length) return [];
 
-  const shuffledEntrants = shuffleArray(entrants);
-  const fallbackPairs = [];
-  for (let i = 0; i < shuffledEntrants.length; i += 2) {
-    if (shuffledEntrants[i + 1]) {
-      fallbackPairs.push({
-        teamAId: shuffledEntrants[i].teamId,
-        teamBId: shuffledEntrants[i + 1].teamId,
-        scoreA: '',
-        scoreB: '',
-      });
-    }
-  }
-
-  return fallbackPairs;
+  return pairs.map(([teamA, teamB]) => ({
+    teamAId: teamA.teamId,
+    teamBId: teamB.teamId,
+    scoreA: '',
+    scoreB: '',
+  }));
 }
 
 function App() {
@@ -565,8 +551,13 @@ function App() {
     });
   }, [baseTeams]);
 
-  const [finalStage, setFinalStage] = useState(() =>
-      syncFinalStageWithTeams(initialState.finalStage || createEmptyFinalStage(), allTeams)
+  const [finalStage, setFinalStage] = useState(
+      initialState.finalStage || createEmptyFinalStage()
+  );
+
+  const safeFinalStage = useMemo(
+      () => syncFinalStageWithTeams(finalStage || createEmptyFinalStage(), allTeams),
+      [finalStage, allTeams]
   );
 
   useEffect(() => {
@@ -574,12 +565,15 @@ function App() {
   }, [baseTeams, serpentin]);
 
   useEffect(() => {
-    setFinalStage((prev) => syncFinalStageWithTeams(prev, allTeams));
-  }, [allTeams]);
-
-  useEffect(() => {
-    saveAppState({ baseTeams, pools, serpentin, activeTab, finalStage, courtCount });
-  }, [baseTeams, pools, serpentin, activeTab, finalStage, courtCount]);
+    saveAppState({
+      baseTeams,
+      pools,
+      serpentin,
+      activeTab,
+      finalStage: safeFinalStage,
+      courtCount,
+    });
+  }, [baseTeams, pools, serpentin, activeTab, safeFinalStage, courtCount]);
 
   const activePool = pools.find((pool) => pool.id === activeTab) || null;
 
@@ -598,8 +592,8 @@ function App() {
   }, [activePool]);
 
   const finalRanking = useMemo(
-      () => buildFinalRanking(finalStage, rankedPools, allTeams),
-      [finalStage, rankedPools, allTeams]
+      () => buildFinalRanking(safeFinalStage, rankedPools, allTeams),
+      [safeFinalStage, rankedPools, allTeams]
   );
 
   const combinedPointsRanking = useMemo(() => {
@@ -611,21 +605,53 @@ function App() {
       });
     });
 
-    finalStage.quarterFinals.forEach((match) => {
+    safeFinalStage.quarterFinals.forEach((match) => {
       applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
     });
 
-    finalStage.semiFinals.forEach((match) => {
+    safeFinalStage.semiFinals.forEach((match) => {
       applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
     });
 
     applyMatchToStats(
         statMap,
-        finalStage.final.teamAId,
-        finalStage.final.teamBId,
-        finalStage.final.scoreA,
-        finalStage.final.scoreB
+        safeFinalStage.final.teamAId,
+        safeFinalStage.final.teamBId,
+        safeFinalStage.final.scoreA,
+        safeFinalStage.final.scoreB
     );
+
+    if (safeFinalStage.settings.enableThirdPlaceMatch) {
+      applyMatchToStats(
+          statMap,
+          safeFinalStage.thirdPlace.teamAId,
+          safeFinalStage.thirdPlace.teamBId,
+          safeFinalStage.thirdPlace.scoreA,
+          safeFinalStage.thirdPlace.scoreB
+      );
+    }
+
+    if (safeFinalStage.settings.enablePlacement5to8) {
+      safeFinalStage.placement5to8Semis.forEach((match) => {
+        applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+      });
+
+      applyMatchToStats(
+          statMap,
+          safeFinalStage.placement5to8Finals.place5.teamAId,
+          safeFinalStage.placement5to8Finals.place5.teamBId,
+          safeFinalStage.placement5to8Finals.place5.scoreA,
+          safeFinalStage.placement5to8Finals.place5.scoreB
+      );
+
+      applyMatchToStats(
+          statMap,
+          safeFinalStage.placement5to8Finals.place7.teamAId,
+          safeFinalStage.placement5to8Finals.place7.teamBId,
+          safeFinalStage.placement5to8Finals.place7.scoreA,
+          safeFinalStage.placement5to8Finals.place7.scoreB
+      );
+    }
 
     return [...statMap.values()]
         .filter(
@@ -641,7 +667,73 @@ function App() {
           if (b.diff !== a.diff) return b.diff - a.diff;
           return b.pointsFor - a.pointsFor;
         });
-  }, [allTeams, pools, finalStage]);
+  }, [allTeams, pools, safeFinalStage]);
+
+  const finalOnlyPointsRanking = useMemo(() => {
+    const statMap = new Map(allTeams.map((team) => [team.id, createCombinedStatRow(team)]));
+
+    safeFinalStage.quarterFinals.forEach((match) => {
+      applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+    });
+
+    safeFinalStage.semiFinals.forEach((match) => {
+      applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+    });
+
+    applyMatchToStats(
+        statMap,
+        safeFinalStage.final.teamAId,
+        safeFinalStage.final.teamBId,
+        safeFinalStage.final.scoreA,
+        safeFinalStage.final.scoreB
+    );
+
+    if (safeFinalStage.settings.enableThirdPlaceMatch) {
+      applyMatchToStats(
+          statMap,
+          safeFinalStage.thirdPlace.teamAId,
+          safeFinalStage.thirdPlace.teamBId,
+          safeFinalStage.thirdPlace.scoreA,
+          safeFinalStage.thirdPlace.scoreB
+      );
+    }
+
+    if (safeFinalStage.settings.enablePlacement5to8) {
+      safeFinalStage.placement5to8Semis.forEach((match) => {
+        applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+      });
+
+      applyMatchToStats(
+          statMap,
+          safeFinalStage.placement5to8Finals.place5.teamAId,
+          safeFinalStage.placement5to8Finals.place5.teamBId,
+          safeFinalStage.placement5to8Finals.place5.scoreA,
+          safeFinalStage.placement5to8Finals.place5.scoreB
+      );
+
+      applyMatchToStats(
+          statMap,
+          safeFinalStage.placement5to8Finals.place7.teamAId,
+          safeFinalStage.placement5to8Finals.place7.teamBId,
+          safeFinalStage.placement5to8Finals.place7.scoreA,
+          safeFinalStage.placement5to8Finals.place7.scoreB
+      );
+    }
+
+    return [...statMap.values()]
+        .filter(
+            (team) =>
+                team.played > 0 ||
+                team.pointsFor > 0 ||
+                team.pointsAgainst > 0 ||
+                team.totalScore !== 0
+        )
+        .sort((a, b) => {
+          if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
+          if (b.diff !== a.diff) return b.diff - a.diff;
+          return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
+        });
+  }, [allTeams, safeFinalStage]);
 
   const finalOptionGroups = useMemo(() => {
     const placedIds = new Set(pools.flatMap((pool) => pool.teams.map((team) => team.id)));
@@ -851,35 +943,30 @@ function App() {
   function handleAutoQuarterDraw() {
     const draw = buildAutoQuarterDraw({ rankedPools, allTeams, pools });
 
-    if (draw.length === 0) {
+    if (!draw.length) {
       alert('Pas assez d’équipes qualifiées pour générer automatiquement la phase finale.');
       return;
     }
 
     setFinalStage((prev) => {
-      const next = {
-        ...prev,
-        quarterFinals: prev.quarterFinals.map((match, index) => {
-          const source = draw[index];
-          if (!source) {
-            return {
-              ...match,
-              teamAId: '',
-              teamBId: '',
-              scoreA: '',
-              scoreB: '',
-            };
-          }
+      const baseStage = syncFinalStageWithTeams(prev || createEmptyFinalStage(), allTeams);
 
-          return {
-            ...match,
-            teamAId: source.teamAId,
-            teamBId: source.teamBId,
-            scoreA: '',
-            scoreB: '',
-          };
-        }),
-        semiFinals: prev.semiFinals.map((match) => ({
+      const nextQuarterFinals = baseStage.quarterFinals.map((match, index) => {
+        const source = draw[index];
+
+        return {
+          ...match,
+          teamAId: source?.teamAId || '',
+          teamBId: source?.teamBId || '',
+          scoreA: '',
+          scoreB: '',
+        };
+      });
+
+      const nextStage = {
+        ...baseStage,
+        quarterFinals: nextQuarterFinals,
+        semiFinals: baseStage.semiFinals.map((match) => ({
           ...match,
           teamAId: '',
           teamBId: '',
@@ -887,16 +974,72 @@ function App() {
           scoreB: '',
         })),
         final: {
-          ...prev.final,
+          ...baseStage.final,
           teamAId: '',
           teamBId: '',
           scoreA: '',
           scoreB: '',
         },
+        thirdPlace: {
+          ...baseStage.thirdPlace,
+          teamAId: '',
+          teamBId: '',
+          scoreA: '',
+          scoreB: '',
+        },
+        placement5to8Semis: (baseStage.placement5to8Semis || []).map((match) => ({
+          ...match,
+          teamAId: '',
+          teamBId: '',
+          scoreA: '',
+          scoreB: '',
+        })),
+        placement5to8Finals: {
+          place5: {
+            ...baseStage.placement5to8Finals.place5,
+            teamAId: '',
+            teamBId: '',
+            scoreA: '',
+            scoreB: '',
+          },
+          place7: {
+            ...baseStage.placement5to8Finals.place7,
+            teamAId: '',
+            teamBId: '',
+            scoreA: '',
+            scoreB: '',
+          },
+        },
       };
 
-      return syncFinalStageWithTeams(next, allTeams);
+      return syncFinalStageWithTeams(nextStage, allTeams);
     });
+  }
+
+  function handleToggleThirdPlace() {
+    setFinalStage((prev) =>
+        syncFinalStageWithTeams(
+            setFinalStageOption(
+                prev || createEmptyFinalStage(),
+                'enableThirdPlaceMatch',
+                !safeFinalStage.settings.enableThirdPlaceMatch
+            ),
+            allTeams
+        )
+    );
+  }
+
+  function handleToggleQuarterPlacement() {
+    setFinalStage((prev) =>
+        syncFinalStageWithTeams(
+            setFinalStageOption(
+                prev || createEmptyFinalStage(),
+                'enablePlacement5to8',
+                !safeFinalStage.settings.enablePlacement5to8
+            ),
+            allTeams
+        )
+    );
   }
 
   async function handleImportFile(event) {
@@ -919,6 +1062,7 @@ function App() {
       setSerpentin(imported.serpentin || {});
       setActiveTab(imported.activeTab || 'base');
       setFinalStage(imported.finalStage || createEmptyFinalStage());
+      setCourtCount(imported.courtCount || 4);
       setEditingBaseTeamId(null);
       setEditingBaseDraft(null);
     } catch (error) {
@@ -946,14 +1090,17 @@ function App() {
 
   function handleQuarterTeamChange(matchIndex, field, teamId) {
     setFinalStage((prev) =>
-        syncFinalStageWithTeams(assignQuarterTeam(prev, matchIndex, field, teamId), allTeams)
+        syncFinalStageWithTeams(
+            assignQuarterTeam(prev || createEmptyFinalStage(), matchIndex, field, teamId),
+            allTeams
+        )
     );
   }
 
   function handleFinalMatchScore(stageKey, matchIndex, field, value) {
     setFinalStage((prev) =>
         syncFinalStageWithTeams(
-            updateFinalStageMatch(prev, stageKey, matchIndex, field, value),
+            updateFinalStageMatch(prev || createEmptyFinalStage(), stageKey, matchIndex, field, value),
             allTeams
         )
     );
@@ -1014,7 +1161,7 @@ function App() {
                 className={`tab-button ${activeTab === 'finals' ? 'active' : ''}`}
                 onClick={() => setActiveTab('finals')}
             >
-              Quarts/Demi/Final
+              Phase finale
             </button>
 
             <button
@@ -1054,21 +1201,14 @@ function App() {
               </button>
 
               <label
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    color: 'white',
-                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}
               >
                 Terrains dispo
                 <input
                     type="number"
                     min="1"
                     value={courtCount}
-                    onChange={(event) =>
-                        setCourtCount(Math.max(1, Number(event.target.value) || 1))
-                    }
+                    onChange={(event) => setCourtCount(Math.max(1, Number(event.target.value) || 1))}
                     style={{ width: 90 }}
                 />
               </label>
@@ -1080,7 +1220,7 @@ function App() {
                           baseTeams,
                           pools,
                           serpentin,
-                          finalStage,
+                          safeFinalStage,
                           finalRanking,
                           combinedPointsRanking,
                           courtCount
@@ -1098,7 +1238,7 @@ function App() {
                           baseTeams,
                           pools,
                           serpentin,
-                          finalStage,
+                          safeFinalStage,
                           finalRanking,
                           combinedPointsRanking,
                           courtCount
@@ -1121,7 +1261,8 @@ function App() {
             <section className="card full-width">
               <h2>Base équipes / joueurs</h2>
               <p className="note">
-                Tu peux modifier les joueurs, leurs rangs, le nom affiché, ou inverser Joueur 1 / Joueur 2. Le rang cumulé sera recalculé automatiquement.
+                Tu peux modifier les joueurs, leurs rangs, le nom affiché, ou inverser Joueur 1 / Joueur 2.
+                Le rang cumulé sera recalculé automatiquement.
               </p>
 
               <div className="table-wrapper">
@@ -1158,15 +1299,12 @@ function App() {
                                     <input
                                         type="text"
                                         value={editingBaseDraft.number}
-                                        onChange={(event) =>
-                                            handleBaseDraftChange('number', event.target.value)
-                                        }
+                                        onChange={(event) => handleBaseDraftChange('number', event.target.value)}
                                     />
                                 ) : (
                                     team.number
                                 )}
                               </td>
-
                               <td>
                                 {isEditing ? (
                                     <input
@@ -1180,7 +1318,6 @@ function App() {
                                     team.name
                                 )}
                               </td>
-
                               <td>
                                 {isEditing ? (
                                     <input
@@ -1194,7 +1331,6 @@ function App() {
                                     team.players?.[0]?.name || ''
                                 )}
                               </td>
-
                               <td>
                                 {isEditing ? (
                                     <input
@@ -1211,7 +1347,6 @@ function App() {
                                     ''
                                 )}
                               </td>
-
                               <td>
                                 {isEditing ? (
                                     <input
@@ -1225,7 +1360,6 @@ function App() {
                                     team.players?.[1]?.name || ''
                                 )}
                               </td>
-
                               <td>
                                 {isEditing ? (
                                     <input
@@ -1242,9 +1376,7 @@ function App() {
                                     ''
                                 )}
                               </td>
-
                               <td>{liveTotal ? formatRank(liveTotal) : ''}</td>
-
                               <td>
                                 <div className="team-actions">
                                   {isEditing ? (
@@ -1298,7 +1430,8 @@ function App() {
             <section className="card full-width">
               <h2>Serpentin</h2>
               <p className="note">
-                L’arbitre place ici les équipes manuellement. Les poules se remplissent automatiquement à partir de ces choix.
+                L’arbitre place ici les équipes manuellement. Les poules se remplissent automatiquement
+                à partir de ces choix.
               </p>
 
               <div className="serpentin-grid">
@@ -1306,7 +1439,6 @@ function App() {
                     <div key={pool.id} className="serpentin-column">
                       <div className="pool-header">
                         <h3>{pool.name}</h3>
-
                         <div className="pool-header-actions">
                           <button
                               type="button"
@@ -1335,9 +1467,7 @@ function App() {
                                     entry={entry}
                                     baseTeams={allTeams}
                                     getTeamLabelById={getTeamLabelById}
-                                    onChange={(value) =>
-                                        handleChangeSerpentinValue(pool.id, entry.id, value)
-                                    }
+                                    onChange={(value) => handleChangeSerpentinValue(pool.id, entry.id, value)}
                                     onDelete={() => handleDeleteSerpentinRow(pool.id, entry.id)}
                                 />
                             ))}
@@ -1356,17 +1486,17 @@ function App() {
             <section className="card full-width">
               <h2>Planning global des rotations</h2>
               <p className="note">
-                Ce planning répartit les rotations de chaque poule sur les terrains disponibles. Les matchs d’une même rotation restent groupés ensemble autant que possible.
+                Ce planning répartit les matchs de chaque poule sur les terrains disponibles.
+                Les rotations restent respectées en arrière-plan, mais l’affichage est présenté ici match par match.
               </p>
 
               <div className="table-wrapper">
                 <table>
                   <thead>
                   <tr>
-                    <th>Créneau</th>
-                    <th>Terrain</th>
+                    <th>Match</th>
                     <th>Poule</th>
-                    <th>Rotation</th>
+                    <th>Terrain</th>
                     <th>Équipe 1</th>
                     <th>Équipe 2</th>
                   </tr>
@@ -1374,15 +1504,14 @@ function App() {
                   <tbody>
                   {globalPlanning.length === 0 ? (
                       <tr>
-                        <td colSpan="6">Aucun planning disponible pour le moment.</td>
+                        <td colSpan="5">Aucun planning disponible pour le moment.</td>
                       </tr>
                   ) : (
                       globalPlanning.map((row, index) => (
                           <tr key={`${row.slot}-${row.terrain}-${index}`}>
-                            <td>{row.slot}</td>
-                            <td>{row.terrain}</td>
+                            <td>{index + 1}</td>
                             <td>{row.poolName}</td>
-                            <td>{row.round}</td>
+                            <td>{row.terrain}</td>
                             <td>{getTeamNameById(row.match.teamAId)}</td>
                             <td>{getTeamNameById(row.match.teamBId)}</td>
                           </tr>
@@ -1398,7 +1527,8 @@ function App() {
                 <div>
                   <h2>Quarts/Demi/Final</h2>
                   <p className="note">
-                    Sélectionne qui joue contre qui, puis saisis les scores pour faire avancer automatiquement les vainqueurs.
+                    Sélectionne qui joue contre qui, puis saisis les scores pour faire avancer
+                    automatiquement les vainqueurs.
                   </p>
                 </div>
 
@@ -1407,14 +1537,23 @@ function App() {
                     <FaRandom />
                     Tirage automatique
                   </button>
+                  <button type="button" className="icon-btn" onClick={handleToggleThirdPlace}>
+                    {safeFinalStage.settings.enableThirdPlaceMatch
+                        ? 'Petite finale: ON'
+                        : 'Petite finale: OFF'}
+                  </button>
+                  <button type="button" className="icon-btn" onClick={handleToggleQuarterPlacement}>
+                    {safeFinalStage.settings.enablePlacement5to8
+                        ? 'Classement 5-8: ON'
+                        : 'Classement 5-8: OFF'}
+                  </button>
                 </div>
               </div>
 
               <div className="bracket-board">
                 <div className="bracket-column">
                   <div className="bracket-column-title">Quarts de finale</div>
-
-                  {finalStage.quarterFinals.map((match, index) => (
+                  {safeFinalStage.quarterFinals.map((match, index) => (
                       <FinalMatchCard
                           key={match.id}
                           title={`Quart ${index + 1}`}
@@ -1423,9 +1562,7 @@ function App() {
                           allGroups={finalOptionGroups}
                           getTeamNameById={getTeamNameById}
                           getTeamLabelById={getTeamLabelById}
-                          onTeamChange={(field, value) =>
-                              handleQuarterTeamChange(index, field, value)
-                          }
+                          onTeamChange={(field, value) => handleQuarterTeamChange(index, field, value)}
                           onScoreChange={(field, value) =>
                               handleFinalMatchScore('quarterFinals', index, field, value)
                           }
@@ -1435,8 +1572,7 @@ function App() {
 
                 <div className="bracket-column bracket-column-middle">
                   <div className="bracket-column-title">Demi-finales</div>
-
-                  {finalStage.semiFinals.map((match, index) => (
+                  {safeFinalStage.semiFinals.map((match, index) => (
                       <FinalMatchCard
                           key={match.id}
                           title={`Demi ${index + 1}`}
@@ -1454,25 +1590,151 @@ function App() {
 
                 <div className="bracket-column bracket-column-finals">
                   <div className="bracket-column-title">Finale</div>
-
                   <FinalMatchCard
                       title="Finale"
-                      match={finalStage.final}
+                      match={safeFinalStage.final}
                       accent="accent-gold"
                       allGroups={finalOptionGroups}
                       getTeamNameById={getTeamNameById}
                       getTeamLabelById={getTeamLabelById}
-                      onScoreChange={(field, value) =>
-                          handleFinalMatchScore('final', 0, field, value)
-                      }
+                      onScoreChange={(field, value) => handleFinalMatchScore('final', 0, field, value)}
                   />
                 </div>
               </div>
 
-              <div className="card" style={{ marginTop: '1.5rem' }}>
+              {safeFinalStage.settings.enableThirdPlaceMatch ? (
+                  <div className="card planning-card">
+                    <h2>Petite finale (3e / 4e place)</h2>
+                    <FinalMatchCard
+                        title="Petite finale"
+                        match={safeFinalStage.thirdPlace}
+                        accent="accent-blue"
+                        allGroups={finalOptionGroups}
+                        getTeamNameById={getTeamNameById}
+                        getTeamLabelById={getTeamLabelById}
+                        onScoreChange={(field, value) =>
+                            handleFinalMatchScore('thirdPlace', 0, field, value)
+                        }
+                    />
+                  </div>
+              ) : null}
+
+              {safeFinalStage.settings.enablePlacement5to8 ? (
+                  <div className="card planning-card">
+                    <h2>Classement 5e à 8e</h2>
+                    <p className="note">
+                      Les perdants des quarts jouent des matchs de classement. Sans match supplémentaire,
+                      ils seront départagés uniquement sur leurs points de phase finale puis sur la
+                      différence de points.
+                    </p>
+
+                    <div
+                        className="bracket-board"
+                        style={{ gridTemplateColumns: '1fr 1fr', marginTop: '1rem' }}
+                    >
+                      {safeFinalStage.placement5to8Semis.map((match, index) => (
+                          <FinalMatchCard
+                              key={match.id}
+                              title={`Classement ${index + 1}`}
+                              match={match}
+                              accent="accent-blue"
+                              allGroups={finalOptionGroups}
+                              getTeamNameById={getTeamNameById}
+                              getTeamLabelById={getTeamLabelById}
+                              onScoreChange={(field, value) =>
+                                  handleFinalMatchScore('placement5to8Semis', index, field, value)
+                              }
+                          />
+                      ))}
+                    </div>
+
+                    <div
+                        className="bracket-board"
+                        style={{ gridTemplateColumns: '1fr 1fr', marginTop: '1rem' }}
+                    >
+                      <FinalMatchCard
+                          title="Match place 5"
+                          match={safeFinalStage.placement5to8Finals.place5}
+                          accent="accent-blue"
+                          allGroups={finalOptionGroups}
+                          getTeamNameById={getTeamNameById}
+                          getTeamLabelById={getTeamLabelById}
+                          onScoreChange={(field, value) =>
+                              handleFinalMatchScore('placement5to8Finals', 'place5', field, value)
+                          }
+                      />
+
+                      <FinalMatchCard
+                          title="Match place 7"
+                          match={safeFinalStage.placement5to8Finals.place7}
+                          accent="accent-blue"
+                          allGroups={finalOptionGroups}
+                          getTeamNameById={getTeamNameById}
+                          getTeamLabelById={getTeamLabelById}
+                          onScoreChange={(field, value) =>
+                              handleFinalMatchScore('placement5to8Finals', 'place7', field, value)
+                          }
+                      />
+                    </div>
+                  </div>
+              ) : null}
+
+              <div className="card planning-card">
+                <h2>Points phase finale uniquement</h2>
+                <p className="note">
+                  Ce tableau sert au départage quand il n’y a pas de petite finale ou de matchs 5-8.
+                  Il n’écrase jamais le parcours du tournoi : une équipe sortie en quart restera
+                  derrière une équipe sortie en demi.
+                </p>
+
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Équipe</th>
+                      <th>Rang cumulé</th>
+                      <th>J</th>
+                      <th>V</th>
+                      <th>D</th>
+                      <th>PF</th>
+                      <th>PA</th>
+                      <th>Diff</th>
+                      <th>Total</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {finalOnlyPointsRanking.length === 0 ? (
+                        <tr>
+                          <td colSpan="10">Aucun score de phase finale pour le moment.</td>
+                        </tr>
+                    ) : (
+                        finalOnlyPointsRanking.map((team, index) => (
+                            <tr key={team.teamId}>
+                              <td>{index + 1}</td>
+                              <td>{team.teamName}</td>
+                              <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
+                              <td>{team.played}</td>
+                              <td>{team.wins}</td>
+                              <td>{team.losses}</td>
+                              <td>{team.pointsFor}</td>
+                              <td>{team.pointsAgainst}</td>
+                              <td>{team.diff > 0 ? `+${team.diff}` : team.diff}</td>
+                              <td>{team.totalScore > 0 ? `+${team.totalScore}` : team.totalScore}</td>
+                            </tr>
+                        ))
+                    )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="card planning-card">
                 <h2>Cumuls points poules + phase finale</h2>
                 <p className="note">
-                  Ce tableau additionne tous les matchs joués en poules et en phase finale pour aider au départage si nécessaire.
+                  Ce tableau additionne tous les matchs joués en poules et en phase finale pour donner
+                  une vue d’ensemble. Il reste purement indicatif et ne décide pas du placement final
+                  devant le parcours de phase finale.
                 </p>
 
                 <div className="table-wrapper">
@@ -1521,7 +1783,9 @@ function App() {
             <section className="card full-width">
               <h2>Classement final</h2>
               <p className="note">
-                Le classement final affiche l’ordre de sortie du tournoi et le rang cumulé des équipes.
+                Le classement final respecte d’abord le parcours dans le tableau final :
+                vainqueur, finaliste, demi, quart. Les points de phase finale ne servent qu’à départager
+                les équipes d’un même niveau quand aucun match de classement n’est joué.
               </p>
 
               <div className="table-wrapper">
@@ -1555,7 +1819,6 @@ function App() {
             <main className="layout">
               <section className="card">
                 <h2>{activePool?.name} — Équipes</h2>
-
                 {activePool?.teams.length === 0 ? (
                     <p className="empty-text">Aucune équipe placée dans cette poule via le serpentin.</p>
                 ) : (
@@ -1585,7 +1848,6 @@ function App() {
 
               <section className="card">
                 <h2>{activePool?.name} — Matchs</h2>
-
                 {activePool?.matches.length === 0 ? (
                     <p className="empty-text">
                       Place au moins 2 équipes dans le serpentin pour générer des matchs.
@@ -1668,7 +1930,6 @@ function App() {
 
               <section className="card full-width">
                 <h2>{activePool?.name} — Classement</h2>
-
                 <div className="table-wrapper">
                   <table>
                     <thead>
