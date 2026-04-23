@@ -401,9 +401,11 @@ function pairSeedsWithOpponents(seedSlots, opponents) {
     if (index >= seedSlots.length) return acc;
 
     const seed = seedSlots[index];
+
     const preferred = remainingOpponents.filter(
         (candidate) => !seed.poolId || !candidate.poolId || seed.poolId !== candidate.poolId
     );
+
     const ordered = [
       ...preferred,
       ...remainingOpponents.filter((item) => !preferred.includes(item)),
@@ -427,7 +429,7 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
   const tsTeams = allTeams
       .filter((team) => !placedIds.has(team.id))
       .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999))
-      .slice(0, 2)
+      .slice(0, 4)
       .map((team, index) => ({
         teamId: team.id,
         teamName: team.name,
@@ -435,7 +437,7 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
         poolId: null,
         poolName: 'TS',
         type: 'ts',
-        label: `TS #${index + 1}`,
+        tsNumber: index + 1,
       }));
 
   const winners = rankedPools
@@ -477,39 +479,89 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
       )
       .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
 
-  const entrants = [...tsTeams, ...winners, ...seconds, ...extras].slice(0, 8);
-  if (entrants.length < 8) return [];
+  const tsByNumber = {
+    1: tsTeams.find((team) => team.tsNumber === 1) || null,
+    2: tsTeams.find((team) => team.tsNumber === 2) || null,
+    3: tsTeams.find((team) => team.tsNumber === 3) || null,
+    4: tsTeams.find((team) => team.tsNumber === 4) || null,
+  };
 
-  const strongestTs = tsTeams[0] || null;
-  const secondTs = tsTeams[1] || null;
+  // Ordre FÉDÉ figé :
+  // Quart 1 = TS2 en haut
+  // Quart 2 = TS3 en haut
+  // Quart 3 = TS4 en bas
+  // Quart 4 = TS1 en bas
+  const fixedSeedSlots = [
+    { seed: tsByNumber[2], seedPosition: 'A' }, // Q1
+    { seed: tsByNumber[3], seedPosition: 'A' }, // Q2
+    { seed: tsByNumber[4], seedPosition: 'B' }, // Q3
+    { seed: tsByNumber[1], seedPosition: 'B' }, // Q4
+  ];
 
-  const remainingWinners = winners.filter(
-      (item) => item.teamId !== strongestTs?.teamId && item.teamId !== secondTs?.teamId
-  );
+  const usedTsIds = new Set(tsTeams.map((team) => team.teamId));
 
-  const seedSlots = [
-    secondTs || remainingWinners.shift(),
-    remainingWinners.shift(),
-    remainingWinners.shift(),
-    strongestTs || remainingWinners.shift(),
-  ].filter(Boolean);
+  let qualifiedCandidates = [
+    ...winners.filter((team) => !usedTsIds.has(team.teamId)),
+    ...seconds.filter((team) => !usedTsIds.has(team.teamId)),
+    ...extras.filter((team) => !usedTsIds.has(team.teamId)),
+  ];
 
-  const usedSeedIds = new Set(seedSlots.map((item) => item.teamId));
-  const opponentPool = entrants.filter((item) => !usedSeedIds.has(item.teamId));
+  const seededSlots = fixedSeedSlots.map((slot) => {
+    if (slot.seed) return slot;
+    const fallback = qualifiedCandidates.shift() || null;
+    return fallback ? { seed: fallback, seedPosition: slot.seedPosition } : null;
+  });
 
-  const secondPool = shuffleArray(opponentPool.filter((item) => item.type === 'second'));
-  const otherPool = shuffleArray(opponentPool.filter((item) => item.type !== 'second'));
-  const orderedOpponents = [...secondPool, ...otherPool].slice(0, seedSlots.length);
+  if (seededSlots.some((slot) => !slot?.seed)) return [];
 
-  const pairs = pairSeedsWithOpponents(seedSlots, orderedOpponents);
-  if (pairs.length !== seedSlots.length) return [];
+  const seededIds = new Set(seededSlots.map((slot) => slot.seed.teamId));
 
-  return pairs.map(([teamA, teamB]) => ({
-    teamAId: teamA.teamId,
-    teamBId: teamB.teamId,
-    scoreA: '',
-    scoreB: '',
-  }));
+  const remainingOpponents = [
+    ...winners.filter((team) => !seededIds.has(team.teamId)),
+    ...seconds.filter((team) => !seededIds.has(team.teamId)),
+    ...extras.filter((team) => !seededIds.has(team.teamId)),
+  ];
+
+  if (remainingOpponents.length < 4) return [];
+
+  const findOpponent = (seed, available) => {
+    const differentPool = available.find(
+        (candidate) => !seed.poolId || !candidate.poolId || candidate.poolId !== seed.poolId
+    );
+
+    return differentPool || available[0] || null;
+  };
+
+  const pickedOpponents = [];
+  let availableOpponents = [...remainingOpponents];
+
+  for (const slot of seededSlots) {
+    const opponent = findOpponent(slot.seed, availableOpponents);
+    if (!opponent) return [];
+
+    pickedOpponents.push(opponent);
+    availableOpponents = availableOpponents.filter((item) => item.teamId !== opponent.teamId);
+  }
+
+  return seededSlots.map((slot, index) => {
+    const opponent = pickedOpponents[index];
+
+    if (slot.seedPosition === 'B') {
+      return {
+        teamAId: opponent?.teamId || '',
+        teamBId: slot.seed.teamId,
+        scoreA: '',
+        scoreB: '',
+      };
+    }
+
+    return {
+      teamAId: slot.seed.teamId,
+      teamBId: opponent?.teamId || '',
+      scoreA: '',
+      scoreB: '',
+    };
+  });
 }
 
 function App() {
