@@ -8,6 +8,7 @@ import {
   FaPlus,
   FaRandom,
   FaSave,
+  FaStar,
   FaTimes,
   FaTrash,
 } from 'react-icons/fa';
@@ -53,6 +54,7 @@ import {
 function SortableSerpentinRow({
                                 entry,
                                 baseTeams,
+                                unavailableTeamIds,
                                 getTeamLabelById,
                                 onChange,
                                 onDelete,
@@ -91,11 +93,13 @@ function SortableSerpentinRow({
 
         <select value={entry.value} onChange={(event) => onChange(event.target.value)}>
           <option value="">-- Sélectionner une équipe --</option>
-          {baseTeams.map((team) => (
-              <option key={team.id} value={team.id}>
-                {getTeamLabelById(team.id)}
-              </option>
-          ))}
+          {baseTeams
+              .filter((team) => team.id === entry.value || !unavailableTeamIds.has(team.id))
+              .map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {getTeamLabelById(team.id)}
+                  </option>
+              ))}
         </select>
 
         <button type="button" className="danger small-btn" onClick={onDelete}>
@@ -112,11 +116,31 @@ function FinalMatchCard({
                           getTeamLabelById,
                           onScoreChange,
                           allGroups,
+                          unavailableTeamIds = new Set(),
                           accent = '',
                           editableTeams = false,
                           onTeamChange,
                         }) {
   const winner = getDisplayWinner(match);
+
+  const renderTeamOptions = (currentValue) =>
+      allGroups.map((group) => {
+        const availableTeams = group.teams.filter(
+            (team) => team.id === currentValue || !unavailableTeamIds.has(team.id)
+        );
+
+        if (availableTeams.length === 0) return null;
+
+        return (
+            <optgroup key={group.id} label={group.name}>
+              {availableTeams.map((team, teamIndex) => (
+                  <option key={team.id} value={team.id}>
+                    {group.name} #{teamIndex + 1} — {getTeamLabelById(team.id)}
+                  </option>
+              ))}
+            </optgroup>
+        );
+      });
 
   return (
       <div className={`bracket-match ${accent}`}>
@@ -129,15 +153,7 @@ function FinalMatchCard({
                   onChange={(event) => onTeamChange('teamAId', event.target.value)}
               >
                 <option value="">-- Sélectionner une équipe --</option>
-                {allGroups.map((group) => (
-                    <optgroup key={group.id} label={group.name}>
-                      {group.teams.map((team, teamIndex) => (
-                          <option key={team.id} value={team.id}>
-                            {group.name} #{teamIndex + 1} — {getTeamLabelById(team.id)}
-                          </option>
-                      ))}
-                    </optgroup>
-                ))}
+                {renderTeamOptions(match.teamAId)}
               </select>
           ) : (
               <span className="bracket-team-name">
@@ -162,15 +178,7 @@ function FinalMatchCard({
                   onChange={(event) => onTeamChange('teamBId', event.target.value)}
               >
                 <option value="">-- Sélectionner une équipe --</option>
-                {allGroups.map((group) => (
-                    <optgroup key={group.id} label={group.name}>
-                      {group.teams.map((team, teamIndex) => (
-                          <option key={team.id} value={team.id}>
-                            {group.name} #{teamIndex + 1} — {getTeamLabelById(team.id)}
-                          </option>
-                      ))}
-                    </optgroup>
-                ))}
+                {renderTeamOptions(match.teamBId)}
               </select>
           ) : (
               <span className="bracket-team-name">
@@ -293,6 +301,7 @@ function buildTeamFromDraft(draft, existingId) {
       },
     ],
     cumulativeRank: player1Rank + player2Rank,
+    isSeed: Boolean(draft.isSeed),
   };
 }
 
@@ -304,6 +313,40 @@ function getInitialDraftFromTeam(team) {
     player1Rank: String(team.players?.[0]?.rank ?? ''),
     player2Name: team.players?.[1]?.name || '',
     player2Rank: String(team.players?.[1]?.rank ?? ''),
+    isSeed: Boolean(team.isSeed),
+  };
+}
+
+
+function clearTeamFromFinalStage(stage, teamId) {
+  const clearMatch = (match = {}) => {
+    const hasTeamA = match.teamAId === teamId;
+    const hasTeamB = match.teamBId === teamId;
+
+    if (!hasTeamA && !hasTeamB) return match;
+
+    return {
+      ...match,
+      teamAId: hasTeamA ? '' : match.teamAId,
+      teamBId: hasTeamB ? '' : match.teamBId,
+      scoreA: '',
+      scoreB: '',
+    };
+  };
+
+  const baseStage = stage || createEmptyFinalStage();
+
+  return {
+    ...baseStage,
+    quarterFinals: (baseStage.quarterFinals || []).map(clearMatch),
+    semiFinals: (baseStage.semiFinals || []).map(clearMatch),
+    final: clearMatch(baseStage.final),
+    thirdPlace: clearMatch(baseStage.thirdPlace),
+    placement5to8Semis: (baseStage.placement5to8Semis || []).map(clearMatch),
+    placement5to8Finals: {
+      place5: clearMatch(baseStage.placement5to8Finals?.place5),
+      place7: clearMatch(baseStage.placement5to8Finals?.place7),
+    },
   };
 }
 
@@ -396,6 +439,62 @@ function shuffleArray(items) {
   return array;
 }
 
+
+function getOriginalTeamOrderNumber(team) {
+  return Number(String(team?.number || '').match(/(\d+)/)?.[1] || 0);
+}
+
+function getSeedTeams(teams) {
+  return [...teams]
+      .filter((team) => Boolean(team.isSeed))
+      .sort((a, b) => {
+        const aRank = Number(a.cumulativeRank) || 999999999;
+        const bRank = Number(b.cumulativeRank) || 999999999;
+        if (aRank !== bRank) return aRank - bRank;
+
+        const aNum = getOriginalTeamOrderNumber(a);
+        const bNum = getOriginalTeamOrderNumber(b);
+        if (aNum !== bNum) return aNum - bNum;
+
+        return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
+      });
+}
+
+function buildBalancedRandomSerpentin(playableTeams, pools) {
+  if (!pools.length) return {};
+
+  const sortedTeams = [...playableTeams].sort((a, b) => {
+    const aRank = Number(a.cumulativeRank) || 999999999;
+    const bRank = Number(b.cumulativeRank) || 999999999;
+    if (aRank !== bRank) return aRank - bRank;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
+  });
+
+  const randomizedByStrength = [];
+  const bandSize = Math.max(1, pools.length);
+
+  for (let index = 0; index < sortedTeams.length; index += bandSize) {
+    randomizedByStrength.push(...shuffleArray(sortedTeams.slice(index, index + bandSize)));
+  }
+
+  const poolIds = pools.map((pool) => pool.id);
+  const assignments = Object.fromEntries(poolIds.map((poolId) => [poolId, []]));
+
+  randomizedByStrength.forEach((team, index) => {
+    const block = Math.floor(index / poolIds.length);
+    const position = index % poolIds.length;
+    const poolIndex = block % 2 === 0 ? position : poolIds.length - 1 - position;
+    assignments[poolIds[poolIndex]].push(createSerpentinEntry(team.id));
+  });
+
+  return Object.fromEntries(
+      pools.map((pool) => {
+        const rows = assignments[pool.id] || [];
+        return [pool.id, rows.length > 0 ? rows : [createSerpentinEntry('')]];
+      })
+  );
+}
+
 function pairSeedsWithOpponents(seedSlots, opponents) {
   const recurse = (index, remainingOpponents, acc) => {
     if (index >= seedSlots.length) return acc;
@@ -423,12 +522,8 @@ function pairSeedsWithOpponents(seedSlots, opponents) {
   return recurse(0, opponents, []) || [];
 }
 
-function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
-  const placedIds = new Set(pools.flatMap((pool) => pool.teams.map((team) => team.id)));
-
-  const tsTeams = allTeams
-      .filter((team) => !placedIds.has(team.id))
-      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999))
+function buildAutoQuarterDraw({ rankedPools, allTeams }) {
+  const tsTeams = getSeedTeams(allTeams)
       .slice(0, 4)
       .map((team, index) => ({
         teamId: team.id,
@@ -440,44 +535,34 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
         tsNumber: index + 1,
       }));
 
-  const winners = rankedPools
-      .flatMap((pool) =>
-          pool.ranking.slice(0, 1).map((team) => ({
-            teamId: team.teamId,
-            teamName: team.teamName,
-            cumulativeRank: team.cumulativeRank || 0,
-            poolId: pool.id,
-            poolName: pool.name,
-            type: 'winner',
-          }))
-      )
-      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
+  const usedTsIds = new Set(tsTeams.map((team) => team.teamId));
 
-  const seconds = rankedPools
+  const qualifiedFromPools = rankedPools
       .flatMap((pool) =>
-          pool.ranking.slice(1, 2).map((team) => ({
-            teamId: team.teamId,
-            teamName: team.teamName,
-            cumulativeRank: team.cumulativeRank || 0,
-            poolId: pool.id,
-            poolName: pool.name,
-            type: 'second',
-          }))
+          pool.ranking
+              .filter((team) => !usedTsIds.has(team.teamId))
+              .map((team, rankIndex) => ({
+                teamId: team.teamId,
+                teamName: team.teamName,
+                cumulativeRank: team.cumulativeRank || 0,
+                poolId: pool.id,
+                poolName: pool.name,
+                poolRank: rankIndex + 1,
+                wins: team.wins || 0,
+                totalScore: team.totalScore || 0,
+                diff: team.diff || 0,
+                pointsFor: team.pointsFor || 0,
+                type: rankIndex === 0 ? 'winner' : rankIndex === 1 ? 'second' : 'extra',
+              }))
       )
-      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
-
-  const extras = rankedPools
-      .flatMap((pool) =>
-          pool.ranking.slice(2).map((team) => ({
-            teamId: team.teamId,
-            teamName: team.teamName,
-            cumulativeRank: team.cumulativeRank || 0,
-            poolId: pool.id,
-            poolName: pool.name,
-            type: 'extra',
-          }))
-      )
-      .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
+      .sort((a, b) => {
+        if (a.poolRank !== b.poolRank) return a.poolRank - b.poolRank;
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+        if (b.diff !== a.diff) return b.diff - a.diff;
+        if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
+        return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
+      });
 
   const tsByNumber = {
     1: tsTeams.find((team) => team.tsNumber === 1) || null,
@@ -498,29 +583,17 @@ function buildAutoQuarterDraw({ rankedPools, allTeams, pools }) {
     { seed: tsByNumber[1], seedPosition: 'B' }, // Q4
   ];
 
-  const usedTsIds = new Set(tsTeams.map((team) => team.teamId));
-
-  let qualifiedCandidates = [
-    ...winners.filter((team) => !usedTsIds.has(team.teamId)),
-    ...seconds.filter((team) => !usedTsIds.has(team.teamId)),
-    ...extras.filter((team) => !usedTsIds.has(team.teamId)),
-  ];
-
+  const qualifiedQueue = [...qualifiedFromPools];
   const seededSlots = fixedSeedSlots.map((slot) => {
     if (slot.seed) return slot;
-    const fallback = qualifiedCandidates.shift() || null;
+    const fallback = qualifiedQueue.shift() || null;
     return fallback ? { seed: fallback, seedPosition: slot.seedPosition } : null;
   });
 
   if (seededSlots.some((slot) => !slot?.seed)) return [];
 
   const seededIds = new Set(seededSlots.map((slot) => slot.seed.teamId));
-
-  const remainingOpponents = [
-    ...winners.filter((team) => !seededIds.has(team.teamId)),
-    ...seconds.filter((team) => !seededIds.has(team.teamId)),
-    ...extras.filter((team) => !seededIds.has(team.teamId)),
-  ];
+  const remainingOpponents = qualifiedQueue.filter((team) => !seededIds.has(team.teamId));
 
   if (remainingOpponents.length < 4) return [];
 
@@ -575,6 +648,7 @@ function App() {
   const [newPoolName, setNewPoolName] = useState('');
   const [editingBaseTeamId, setEditingBaseTeamId] = useState(null);
   const [editingBaseDraft, setEditingBaseDraft] = useState(null);
+  const [newBaseDraft, setNewBaseDraft] = useState(() => getInitialDraftFromTeam({}));
 
   const importInputRef = useRef(null);
 
@@ -603,6 +677,42 @@ function App() {
     });
   }, [baseTeams]);
 
+  const seedTeams = useMemo(() => getSeedTeams(allTeams), [allTeams]);
+  const seedTeamIds = useMemo(() => new Set(seedTeams.map((team) => team.id)), [seedTeams]);
+  const playableTeams = useMemo(
+      () => allTeams.filter((team) => !seedTeamIds.has(team.id)),
+      [allTeams, seedTeamIds]
+  );
+
+  const selectedSerpentinTeamIds = useMemo(() => {
+    const ids = new Set();
+
+    Object.values(serpentin || {}).forEach((entries) => {
+      (entries || []).forEach((entry) => {
+        if (entry.value) ids.add(entry.value);
+      });
+    });
+
+    return ids;
+  }, [serpentin]);
+
+  const playableTeamNumberById = useMemo(() => {
+    const map = new Map();
+    playableTeams.forEach((team, index) => map.set(team.id, index + 1));
+    return map;
+  }, [playableTeams]);
+
+  const seedTeamNumberById = useMemo(() => {
+    const map = new Map();
+    seedTeams.forEach((team, index) => map.set(team.id, index + 1));
+    return map;
+  }, [seedTeams]);
+
+  const displayBaseTeams = useMemo(
+      () => [...playableTeams, ...seedTeams],
+      [playableTeams, seedTeams]
+  );
+
   const [finalStage, setFinalStage] = useState(
       initialState.finalStage || createEmptyFinalStage()
   );
@@ -613,8 +723,28 @@ function App() {
   );
 
   useEffect(() => {
-    setPools((prev) => syncPoolsFromSerpentin(baseTeams, prev, serpentin));
-  }, [baseTeams, serpentin]);
+    setPools((prev) => syncPoolsFromSerpentin(playableTeams, prev, serpentin));
+  }, [playableTeams, serpentin]);
+
+  useEffect(() => {
+    setSerpentin((prev) => {
+      let hasChanged = false;
+      const next = {};
+
+      Object.keys(prev).forEach((poolId) => {
+        next[poolId] = (prev[poolId] || []).map((entry) => {
+          if (entry.value && seedTeamIds.has(entry.value)) {
+            hasChanged = true;
+            return { ...entry, value: '' };
+          }
+          return entry;
+        });
+      });
+
+      return hasChanged ? next : prev;
+    });
+  }, [seedTeamIds]);
+
 
   useEffect(() => {
     saveAppState({
@@ -809,6 +939,17 @@ function App() {
     return groups;
   }, [pools, allTeams]);
 
+  const selectedQuarterTeamIds = useMemo(() => {
+    const ids = new Set();
+
+    safeFinalStage.quarterFinals.forEach((match) => {
+      if (match.teamAId) ids.add(match.teamAId);
+      if (match.teamBId) ids.add(match.teamBId);
+    });
+
+    return ids;
+  }, [safeFinalStage.quarterFinals]);
+
   const globalPlanning = useMemo(
       () => buildGlobalPlanning(pools, Math.max(1, Number(courtCount) || 1)),
       [pools, courtCount]
@@ -828,10 +969,20 @@ function App() {
     return allTeams.find((team) => team.id === teamId)?.name || '';
   }
 
+  function getDisplayTeamNumber(team) {
+    if (!team) return '';
+
+    if (seedTeamIds.has(team.id)) {
+      return `TS ${seedTeamNumberById.get(team.id) || ''}`.trim();
+    }
+
+    return `Équipe ${playableTeamNumberById.get(team.id) || ''}`.trim();
+  }
+
   function getTeamLabelById(teamId) {
     const team = allTeams.find((item) => item.id === teamId);
     if (!team) return '';
-    return `${team.number} — ${team.name}${
+    return `${getDisplayTeamNumber(team)} — ${team.name}${
         team.cumulativeRank ? ` — Rang cumulé: ${formatRank(team.cumulativeRank)}` : ''
     }`;
   }
@@ -844,6 +995,36 @@ function App() {
   function handleCancelBaseEdit() {
     setEditingBaseTeamId(null);
     setEditingBaseDraft(null);
+  }
+
+  function handleToggleSeedTeam(team) {
+    if (!team) return;
+
+    const nextIsSeed = !Boolean(team.isSeed);
+
+    if (nextIsSeed) {
+      setSerpentin((prev) => {
+        const next = {};
+
+        Object.keys(prev).forEach((poolId) => {
+          next[poolId] = (prev[poolId] || []).map((entry) =>
+              entry.value === team.id ? { ...entry, value: '' } : entry
+          );
+        });
+
+        return next;
+      });
+    }
+
+    setBaseTeams((prev) =>
+        prev.map((item) =>
+            item.id === team.id ? { ...item, isSeed: nextIsSeed } : item
+        )
+    );
+
+    if (editingBaseTeamId === team.id) {
+      setEditingBaseDraft((prev) => (prev ? { ...prev, isSeed: nextIsSeed } : prev));
+    }
   }
 
   function handleBaseDraftChange(field, value) {
@@ -872,6 +1053,118 @@ function App() {
     setEditingBaseTeamId(null);
     setEditingBaseDraft(null);
   }
+
+  function handleDeleteBaseTeam(team) {
+    if (!team) return;
+
+    const placedPoolNames = pools
+        .filter((pool) => pool.teams.some((poolTeam) => poolTeam.id === team.id))
+        .map((pool) => pool.name);
+
+    const finalStageUsesTeam = [
+      ...safeFinalStage.quarterFinals,
+      ...safeFinalStage.semiFinals,
+      safeFinalStage.final,
+      safeFinalStage.thirdPlace,
+      ...(safeFinalStage.placement5to8Semis || []),
+      safeFinalStage.placement5to8Finals?.place5,
+      safeFinalStage.placement5to8Finals?.place7,
+    ]
+        .filter(Boolean)
+        .some((match) => match.teamAId === team.id || match.teamBId === team.id);
+
+    const warningParts = [
+      `Supprimer définitivement ${team.number || 'cette équipe'} — ${team.name || ''} ?`,
+    ];
+
+    if (placedPoolNames.length > 0) {
+      warningParts.push(
+          `Elle sera aussi retirée automatiquement du serpentin et des poules : ${placedPoolNames.join(', ')}.`
+      );
+    }
+
+    if (finalStageUsesTeam) {
+      warningParts.push(
+          'Elle sera aussi retirée automatiquement de la phase finale et les scores concernés seront remis à zéro.'
+      );
+    }
+
+    const confirmed = window.confirm(warningParts.join('\n\n'));
+    if (!confirmed) return;
+
+    const remainingTeams = allTeams.filter((item) => item.id !== team.id);
+
+    setBaseTeams((prev) => prev.filter((item) => item.id !== team.id));
+
+    setSerpentin((prev) => {
+      const next = {};
+
+      Object.keys(prev).forEach((poolId) => {
+        next[poolId] = (prev[poolId] || []).map((entry) =>
+            entry.value === team.id ? { ...entry, value: '' } : entry
+        );
+      });
+
+      return next;
+    });
+
+    setFinalStage((prev) =>
+        syncFinalStageWithTeams(clearTeamFromFinalStage(prev || createEmptyFinalStage(), team.id), remainingTeams)
+    );
+
+    setEditingBaseTeamId(null);
+    setEditingBaseDraft(null);
+  }
+
+  function handleNewBaseDraftChange(field, value) {
+    setNewBaseDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
+  function handleAddManualBaseTeam(event) {
+    event.preventDefault();
+
+    const player1Name = String(newBaseDraft.player1Name || '').trim();
+    const player2Name = String(newBaseDraft.player2Name || '').trim();
+    const displayName = String(newBaseDraft.displayName || '').trim();
+
+    if (!displayName && !player1Name && !player2Name) {
+      alert('Ajoute au moins un nom d’équipe ou un joueur.');
+      return;
+    }
+
+    const existingNumbers = baseTeams
+        .map((team) => Number(String(team.number || '').match(/(\d+)/)?.[1] || 0))
+        .filter((number) => Number.isFinite(number));
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    const teamId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const normalizedDraft = {
+      ...newBaseDraft,
+      number: newBaseDraft.number || `Équipe ${nextNumber}`,
+      displayName:
+          displayName ||
+          [player1Name, player2Name].filter(Boolean).join(' & ') ||
+          `Équipe ${nextNumber}`,
+    };
+
+    setBaseTeams((prev) => [...prev, buildTeamFromDraft(normalizedDraft, teamId)]);
+    setNewBaseDraft(getInitialDraftFromTeam({}));
+  }
+
+  function handleAutoFillSerpentin() {
+    if (playableTeams.length === 0 || pools.length === 0) return;
+
+    const confirmed = window.confirm(
+        'Le tirage automatique va remplacer les lignes du serpentin actuel. Continuer ?'
+    );
+
+    if (!confirmed) return;
+
+    setSerpentin(buildBalancedRandomSerpentin(playableTeams, pools));
+  }
+
 
   function handleAddPool(event) {
     event.preventDefault();
@@ -999,7 +1292,7 @@ function App() {
   }
 
   function handleAutoQuarterDraw() {
-    const draw = buildAutoQuarterDraw({ rankedPools, allTeams, pools });
+    const draw = buildAutoQuarterDraw({ rankedPools, allTeams });
 
     if (!draw.length) {
       alert('Pas assez d’équipes qualifiées pour générer automatiquement la phase finale.');
@@ -1317,12 +1610,6 @@ function App() {
 
         {activeTab === 'base' ? (
             <section className="card full-width">
-              <h2>Base équipes / joueurs</h2>
-              <p className="note">
-                Tu peux modifier les joueurs, leurs rangs, le nom affiché, ou inverser Joueur 1 / Joueur 2.
-                Le rang cumulé sera recalculé automatiquement.
-              </p>
-
               <div className="table-wrapper">
                 <table>
                   <thead>
@@ -1338,12 +1625,12 @@ function App() {
                   </tr>
                   </thead>
                   <tbody>
-                  {allTeams.length === 0 ? (
+                  {displayBaseTeams.length === 0 ? (
                       <tr>
                         <td colSpan="8">Aucune donnée importée pour le moment.</td>
                       </tr>
                   ) : (
-                      allTeams.map((team) => {
+                      displayBaseTeams.map((team) => {
                         const isEditing = editingBaseTeamId === team.id;
                         const liveTotal = isEditing
                             ? (Number(editingBaseDraft?.player1Rank) || 0) +
@@ -1353,15 +1640,25 @@ function App() {
                         return (
                             <tr key={team.id}>
                               <td>
-                                {isEditing ? (
-                                    <input
-                                        type="text"
-                                        value={editingBaseDraft.number}
-                                        onChange={(event) => handleBaseDraftChange('number', event.target.value)}
-                                    />
-                                ) : (
-                                    team.number
-                                )}
+                                <div className="team-number-with-seed">
+                                  <button
+                                      type="button"
+                                      className={`icon-btn seed-star ${team.isSeed ? 'active' : ''}`}
+                                      title={team.isSeed ? 'Retirer cette équipe des têtes de série / VIP' : 'Marquer cette équipe en tête de série / VIP'}
+                                      onClick={() => handleToggleSeedTeam(team)}
+                                  >
+                                    <FaStar />
+                                  </button>
+                                  {isEditing ? (
+                                      <input
+                                          type="text"
+                                          value={editingBaseDraft.number}
+                                          onChange={(event) => handleBaseDraftChange('number', event.target.value)}
+                                      />
+                                  ) : (
+                                      <span>{getDisplayTeamNumber(team)}</span>
+                                  )}
+                                </div>
                               </td>
                               <td>
                                 {isEditing ? (
@@ -1458,6 +1755,14 @@ function App() {
                                         <button
                                             type="button"
                                             className="danger small-btn"
+                                            title="Supprimer cette équipe de la base, des poules et de la phase finale"
+                                            onClick={() => handleDeleteBaseTeam(team)}
+                                        >
+                                          <FaTrash />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="danger small-btn"
                                             title="Annuler"
                                             onClick={handleCancelBaseEdit}
                                         >
@@ -1483,14 +1788,80 @@ function App() {
                   </tbody>
                 </table>
               </div>
+
+              <hr style={{ margin: '28px 0', opacity: 0.18 }} />
+
+              <h2>Base équipes / joueurs</h2>
+              <p className="note">
+                Tu peux modifier les joueurs, leurs rangs, le nom affiché, inverser Joueur 1 / Joueur 2, ou cliquer sur l’étoile devant une équipe pour la passer en TS / VIP.
+                Les équipes classiques sont renumérotées automatiquement, et les têtes de série sont affichées en TS 1, TS 2, etc.
+              </p>
+
+              <form className="manual-team-form" onSubmit={handleAddManualBaseTeam}>
+                <input
+                    type="text"
+                    placeholder="N° équipe (optionnel)"
+                    value={newBaseDraft.number}
+                    onChange={(event) => handleNewBaseDraftChange('number', event.target.value)}
+                />
+                <input
+                    type="text"
+                    placeholder="Nom affiché / équipe"
+                    value={newBaseDraft.displayName}
+                    onChange={(event) => handleNewBaseDraftChange('displayName', event.target.value)}
+                />
+                <input
+                    type="text"
+                    placeholder="Joueur 1"
+                    value={newBaseDraft.player1Name}
+                    onChange={(event) => handleNewBaseDraftChange('player1Name', event.target.value)}
+                />
+                <input
+                    type="number"
+                    min="0"
+                    placeholder="Rang 1"
+                    value={newBaseDraft.player1Rank}
+                    onChange={(event) => handleNewBaseDraftChange('player1Rank', event.target.value)}
+                />
+                <input
+                    type="text"
+                    placeholder="Joueur 2"
+                    value={newBaseDraft.player2Name}
+                    onChange={(event) => handleNewBaseDraftChange('player2Name', event.target.value)}
+                />
+                <input
+                    type="number"
+                    min="0"
+                    placeholder="Rang 2"
+                    value={newBaseDraft.player2Rank}
+                    onChange={(event) => handleNewBaseDraftChange('player2Rank', event.target.value)}
+                />
+                <button type="submit">
+                  <FaPlus />
+                  Ajouter manuellement
+                </button>
+              </form>
+
             </section>
         ) : activeTab === 'serpentin' ? (
             <section className="card full-width">
               <h2>Serpentin</h2>
               <p className="note">
-                L’arbitre place ici les équipes manuellement. Les poules se remplissent automatiquement
-                à partir de ces choix.
+                L’arbitre peut placer les équipes manuellement ou lancer un tirage automatique équilibré.
+                Les têtes de série restent hors poules et ne sont jamais proposées dans le serpentin.
               </p>
+
+              <div className="serpentin-toolbar">
+                <button type="button" onClick={handleAutoFillSerpentin} disabled={playableTeams.length === 0}>
+                  <FaRandom />
+                  Tirage auto équilibré
+                </button>
+
+
+                <span className="serpentin-summary">
+                  {playableTeams.length} équipe(s) à répartir dans {pools.length} poule(s)
+                </span>
+              </div>
 
               <div className="serpentin-grid">
                 {pools.map((pool) => (
@@ -1523,7 +1894,8 @@ function App() {
                                 <SortableSerpentinRow
                                     key={entry.id}
                                     entry={entry}
-                                    baseTeams={allTeams}
+                                    baseTeams={playableTeams}
+                                    unavailableTeamIds={selectedSerpentinTeamIds}
                                     getTeamLabelById={getTeamLabelById}
                                     onChange={(value) => handleChangeSerpentinValue(pool.id, entry.id, value)}
                                     onDelete={() => handleDeleteSerpentinRow(pool.id, entry.id)}
@@ -1538,6 +1910,44 @@ function App() {
                       </button>
                     </div>
                 ))}
+              </div>
+
+              <div className="seed-table-block">
+                <h3>Têtes de série / VIP hors serpentin</h3>
+                <p className="note">
+                  Ces équipes ont été marquées avec l’étoile TS / VIP dans la Base. Elles restent disponibles pour la phase finale,
+                  mais ne sont pas placées dans les poules ni proposées dans le serpentin.
+                </p>
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                    <tr>
+                      <th>TS</th>
+                      <th>Équipe</th>
+                      <th>Joueur 1</th>
+                      <th>Joueur 2</th>
+                      <th>Rang cumulé</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {seedTeams.length === 0 ? (
+                        <tr>
+                          <td colSpan="5">Aucune tête de série définie.</td>
+                        </tr>
+                    ) : (
+                        seedTeams.map((team, index) => (
+                            <tr key={team.id}>
+                              <td>TS{index + 1}</td>
+                              <td>{team.name}</td>
+                              <td>{team.players?.[0]?.name || ''}</td>
+                              <td>{team.players?.[1]?.name || ''}</td>
+                              <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
+                            </tr>
+                        ))
+                    )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
         ) : activeTab === 'planning' ? (
@@ -1618,6 +2028,7 @@ function App() {
                           match={match}
                           editableTeams={true}
                           allGroups={finalOptionGroups}
+                          unavailableTeamIds={selectedQuarterTeamIds}
                           getTeamNameById={getTeamNameById}
                           getTeamLabelById={getTeamLabelById}
                           onTeamChange={(field, value) => handleQuarterTeamChange(index, field, value)}
@@ -1842,8 +2253,7 @@ function App() {
               <h2>Classement final</h2>
               <p className="note">
                 Le classement final respecte d’abord le parcours dans le tableau final :
-                vainqueur, finaliste, demi, quart. Les points de phase finale ne servent qu’à départager
-                les équipes d’un même niveau quand aucun match de classement n’est joué.
+                vainqueur, finaliste, demi, quart.
                 <br /><br />
                 <strong>Signification des colonnes :</strong>
                 <br />
