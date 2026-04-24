@@ -781,8 +781,9 @@ function App() {
                 team.totalScore !== 0
         )
         .sort((a, b) => {
-          if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
+          if (b.wins !== a.wins) return b.wins - a.wins;
           if (b.diff !== a.diff) return b.diff - a.diff;
+          if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
           return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
         });
   }, [allTeams, safeFinalStage]);
@@ -816,6 +817,11 @@ function App() {
   function formatRank(value) {
     const number = Number(value) || 0;
     return number.toLocaleString('fr-FR');
+  }
+
+  function formatSigned(value) {
+    const number = Number(value) || 0;
+    return number > 0 ? '+' + number : String(number);
   }
 
   function getTeamNameById(teamId) {
@@ -1734,9 +1740,9 @@ function App() {
               <div className="card planning-card">
                 <h2>Points phase finale uniquement</h2>
                 <p className="note">
-                  Ce tableau sert au départage quand il n’y a pas de petite finale ou de matchs 5-8.
-                  Il n’écrase jamais le parcours du tournoi : une équipe sortie en quart restera
-                  derrière une équipe sortie en demi.
+                  Ce tableau sert au <strong>départage</strong> lorsqu’il n’y a pas de petite finale ou de matchs de classement (5–8).
+                  Il ne remplace jamais le <strong>parcours dans le tableau final</strong> :
+                  une équipe éliminée en quart restera derrière une équipe éliminée en demi.
                 </p>
 
                 <div className="table-wrapper">
@@ -1838,6 +1844,16 @@ function App() {
                 Le classement final respecte d’abord le parcours dans le tableau final :
                 vainqueur, finaliste, demi, quart. Les points de phase finale ne servent qu’à départager
                 les équipes d’un même niveau quand aucun match de classement n’est joué.
+                <br /><br />
+                <strong>Signification des colonnes :</strong>
+                <br />
+                • <strong>J</strong> : matchs joués<br />
+                • <strong>V</strong> : victoires<br />
+                • <strong>D</strong> : défaites<br />
+                • <strong>PF</strong> : points marqués<br />
+                • <strong>PA</strong> : points encaissés<br />
+                • <strong>Diff</strong> : différence de points (PF - PA)<br />
+                • <strong>Total</strong> : valeur utilisée pour le classement
               </p>
 
               <div className="table-wrapper">
@@ -1847,12 +1863,19 @@ function App() {
                     <th>Place</th>
                     <th>Équipe</th>
                     <th>Rang cumulé</th>
+                    <th>J</th>
+                    <th>V</th>
+                    <th>D</th>
+                    <th>PF</th>
+                    <th>PA</th>
+                    <th>Diff</th>
+                    <th>Total</th>
                   </tr>
                   </thead>
                   <tbody>
                   {finalRanking.length === 0 ? (
                       <tr>
-                        <td colSpan="3">Aucun classement final disponible pour le moment.</td>
+                        <td colSpan="10">Aucun classement final disponible pour le moment.</td>
                       </tr>
                   ) : (
                       finalRanking.map((row) => (
@@ -1860,6 +1883,13 @@ function App() {
                             <td>{row.position}</td>
                             <td>{row.teamName}</td>
                             <td>{row.cumulativeRank ? formatRank(row.cumulativeRank) : ''}</td>
+                            <td>{row.played || 0}</td>
+                            <td>{row.wins || 0}</td>
+                            <td>{row.losses || 0}</td>
+                            <td>{row.pointsFor || 0}</td>
+                            <td>{row.pointsAgainst || 0}</td>
+                            <td>{formatSigned(row.diff || 0)}</td>
+                            <td>{formatSigned(row.totalScore || 0)}</td>
                           </tr>
                       ))
                   )}
