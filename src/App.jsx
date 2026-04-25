@@ -2246,8 +2246,7 @@ function App() {
               <h2>Classement final</h2>
               <p className="note">
                 Le classement final respecte d’abord le parcours dans le tableau final :
-                vainqueur, finaliste, demi, quart. Les points de phase finale ne servent qu’à départager
-                les équipes d’un même niveau quand aucun match de classement n’est joué.
+                vainqueur, finaliste, demi, quart.
                 <br /><br />
                 <strong>Signification des colonnes :</strong>
                 <br />
