@@ -6,6 +6,7 @@ import {
   FaFileCsv,
   FaFileExcel,
   FaPlus,
+  FaRandom,
   FaSave,
   FaStar,
   FaTimes,
@@ -459,32 +460,23 @@ function getSeedTeams(teams) {
       });
 }
 
-function buildOrderedSerpentin(playableTeams, pools) {
+function buildBalancedRandomSerpentin(playableTeams, pools) {
   if (!pools.length) return {};
 
   const sortedTeams = [...playableTeams].sort((a, b) => {
     const aRank = Number(a.cumulativeRank) || 999999999;
     const bRank = Number(b.cumulativeRank) || 999999999;
     if (aRank !== bRank) return aRank - bRank;
-
-    const aNum = getOriginalTeamOrderNumber(a);
-    const bNum = getOriginalTeamOrderNumber(b);
-    if (aNum !== bNum) return aNum - bNum;
-
     return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
   });
 
   const poolIds = pools.map((pool) => pool.id);
   const assignments = Object.fromEntries(poolIds.map((poolId) => [poolId, []]));
-  const useSnakeDistribution = poolIds.length % 2 === 0;
 
   sortedTeams.forEach((team, index) => {
-    const rowIndex = Math.floor(index / poolIds.length);
-    const positionInRow = index % poolIds.length;
-    const poolIndex = useSnakeDistribution && rowIndex % 2 === 1
-        ? poolIds.length - 1 - positionInRow
-        : positionInRow;
-
+    const block = Math.floor(index / poolIds.length);
+    const position = index % poolIds.length;
+    const poolIndex = block % 2 === 0 ? position : poolIds.length - 1 - position;
     assignments[poolIds[poolIndex]].push(createSerpentinEntry(team.id));
   });
 
@@ -495,6 +487,7 @@ function buildOrderedSerpentin(playableTeams, pools) {
       })
   );
 }
+
 function pairSeedsWithOpponents(seedSlots, opponents) {
   const recurse = (index, remainingOpponents, acc) => {
     if (index >= seedSlots.length) return acc;
@@ -1157,12 +1150,12 @@ function App() {
     if (playableTeams.length === 0 || pools.length === 0) return;
 
     const confirmed = window.confirm(
-        'Le remplissage automatique va remplacer les lignes du serpentin actuel. Continuer ?'
+        'Le remplissage serpentin va remplacer les lignes actuelles. Continuer ?'
     );
 
     if (!confirmed) return;
 
-    setSerpentin(buildOrderedSerpentin(playableTeams, pools));
+    setSerpentin(buildBalancedRandomSerpentin(playableTeams, pools));
   }
 
 
@@ -1847,14 +1840,14 @@ function App() {
             <section className="card full-width">
               <h2>Serpentin</h2>
               <p className="note">
-                L’arbitre peut placer les équipes manuellement ou remplir le serpentin automatiquement dans l’ordre des rangs cumulés.
+                L’arbitre peut placer les équipes manuellement ou remplir le serpentin automatiquement selon l’ordre officiel.
                 Les têtes de série restent hors poules et ne sont jamais proposées dans le serpentin.
               </p>
 
               <div className="serpentin-toolbar">
                 <button type="button" onClick={handleAutoFillSerpentin} disabled={playableTeams.length === 0}>
-                  <FaExchangeAlt />
-                  Remplir le serpentin
+                  <FaRandom />
+                  Remplir serpentin
                 </button>
 
 
