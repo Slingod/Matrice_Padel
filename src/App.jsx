@@ -5,6 +5,7 @@ import {
   FaExchangeAlt,
   FaFileCsv,
   FaFileExcel,
+  FaCog,
   FaPlus,
   FaRandom,
   FaSave,
@@ -211,7 +212,10 @@ function syncPoolsFromSerpentin(baseTeams, previousPools, serpentinMap) {
     return {
       ...pool,
       teams,
-      matches: syncMatchesPreserveScores(teams, pool.matches),
+      matches: normalizePoolMatchesToFftPadelRotation(
+          { ...pool, teams, matches: syncMatchesPreserveScores(teams, pool.matches) },
+          pool.matches
+      ),
     };
   });
 }
@@ -369,6 +373,89 @@ function groupMatchesByRound(matches) {
   return [...roundMap.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([round, roundMatches]) => ({ round, matches: roundMatches }));
+}
+
+const FFT_PADEL_ROTATIONS = {
+  4: [
+    [[1, 4], [2, 3]],
+    [[1, 3], [2, 4]],
+    [[1, 2], [3, 4]],
+  ],
+  5: [
+    [[1, 5], [2, 4]],
+    [[1, 4], [5, 3]],
+    [[1, 3], [4, 2]],
+    [[1, 2], [3, 5]],
+    [[2, 5], [3, 4]],
+  ],
+  6: [
+    [[1, 6], [2, 5], [3, 4]],
+    [[1, 5], [6, 4], [2, 3]],
+    [[1, 4], [5, 3], [6, 2]],
+    [[1, 3], [4, 2], [5, 6]],
+    [[1, 2], [3, 6], [4, 5]],
+  ],
+};
+
+function getMatchPairKey(teamAId, teamBId) {
+  return [teamAId, teamBId].sort().join('__');
+}
+
+function normalizePoolMatchesToFftPadelRotation(pool, previousMatches = []) {
+  const teams = pool.teams || [];
+  const rotation = FFT_PADEL_ROTATIONS[teams.length];
+
+  if (!rotation) {
+    return [...(pool.matches || [])].sort((a, b) => {
+      if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+      return (a.localCourt || 0) - (b.localCourt || 0);
+    });
+  }
+
+  const previousByPair = new Map();
+  [...previousMatches, ...(pool.matches || [])].forEach((match) => {
+    if (!match.teamAId || !match.teamBId) return;
+    previousByPair.set(getMatchPairKey(match.teamAId, match.teamBId), match);
+  });
+
+  return rotation.flatMap((roundPairs, roundIndex) =>
+      roundPairs.map(([teamANumber, teamBNumber], courtIndex) => {
+        const teamA = teams[teamANumber - 1];
+        const teamB = teams[teamBNumber - 1];
+        const existing = previousByPair.get(getMatchPairKey(teamA?.id, teamB?.id));
+        const isSameDirection = existing?.teamAId === teamA?.id && existing?.teamBId === teamB?.id;
+        const isReversed = existing?.teamAId === teamB?.id && existing?.teamBId === teamA?.id;
+
+        return {
+          ...(existing || {}),
+          id:
+              existing?.id ||
+              `${pool.id}-match-${roundIndex + 1}-${courtIndex + 1}-${teamA?.id || 'a'}-${teamB?.id || 'b'}`,
+          round: roundIndex + 1,
+          localCourt: courtIndex + 1,
+          teamAId: teamA?.id || '',
+          teamBId: teamB?.id || '',
+          scoreA: isReversed ? existing?.scoreB ?? '' : isSameDirection ? existing?.scoreA ?? '' : existing?.scoreA ?? '',
+          scoreB: isReversed ? existing?.scoreA ?? '' : isSameDirection ? existing?.scoreB ?? '' : existing?.scoreB ?? '',
+        };
+      })
+  );
+}
+
+function sortMatchesForDisplay(matches) {
+  return [...(matches || [])].sort((a, b) => {
+    if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
+    return (a.localCourt || 0) - (b.localCourt || 0);
+  });
+}
+
+function normalizeCourtLabels(labels, courtCount) {
+  const count = Math.max(1, Number(courtCount) || 1);
+  return Array.from({ length: count }, (_, index) => {
+    const rawLabel = labels?.[index];
+    const label = String(rawLabel ?? '').trim();
+    return label || String(index + 1);
+  });
 }
 
 function buildGlobalPlanning(pools, courtCount) {
@@ -637,6 +724,11 @@ function App() {
   const [serpentin, setSerpentin] = useState(initialState.serpentin);
   const [activeTab, setActiveTab] = useState(initialState.activeTab);
   const [courtCount, setCourtCount] = useState(initialState.courtCount || 4);
+  const [courtLabels, setCourtLabels] = useState(() =>
+      normalizeCourtLabels(initialState.courtLabels, initialState.courtCount || 4)
+  );
+  const [isCourtSettingsOpen, setIsCourtSettingsOpen] = useState(false);
+  const [editingMatchCourtId, setEditingMatchCourtId] = useState(null);
 
   const [newPoolName, setNewPoolName] = useState('');
   const [editingBaseTeamId, setEditingBaseTeamId] = useState(null);
@@ -740,6 +832,10 @@ function App() {
 
 
   useEffect(() => {
+    setCourtLabels((prev) => normalizeCourtLabels(prev, courtCount));
+  }, [courtCount]);
+
+  useEffect(() => {
     saveAppState({
       baseTeams,
       pools,
@@ -747,8 +843,29 @@ function App() {
       activeTab,
       finalStage: safeFinalStage,
       courtCount,
+      courtLabels,
     });
-  }, [baseTeams, pools, serpentin, activeTab, safeFinalStage, courtCount]);
+  }, [baseTeams, pools, serpentin, activeTab, safeFinalStage, courtCount, courtLabels]);
+
+  const displayCourtLabel = (courtNumber) =>
+      courtLabels[Math.max(0, Number(courtNumber || 1) - 1)] || String(courtNumber || 1);
+
+  const displayMatchCourtLabel = (match, fallbackCourtNumber = null) => {
+    const override = String(match?.courtOverride || '').trim();
+    return override || displayCourtLabel(fallbackCourtNumber || match?.localCourt || 1);
+  };
+
+  function handleCourtLabelChange(index, value) {
+    setCourtLabels((prev) => {
+      const next = normalizeCourtLabels(prev, courtCount);
+      next[index] = value;
+      return next;
+    });
+  }
+
+  function resetCourtLabels() {
+    setCourtLabels(normalizeCourtLabels([], courtCount));
+  }
 
   const activePool = pools.find((pool) => pool.id === activeTab) || null;
 
@@ -1269,6 +1386,30 @@ function App() {
     );
   }
 
+  function handleMatchCourtOverrideChange(matchId, value) {
+    if (!activePool) return;
+
+    const sanitized = String(value || '').trim();
+
+    setPools((prev) =>
+        prev.map((pool) =>
+            pool.id !== activePool.id
+                ? pool
+                : {
+                  ...pool,
+                  matches: pool.matches.map((match) =>
+                      match.id === matchId ? { ...match, courtOverride: sanitized } : match
+                  ),
+                }
+        )
+    );
+  }
+
+  function resetMatchCourtOverride(matchId) {
+    handleMatchCourtOverrideChange(matchId, '');
+    setEditingMatchCourtId(null);
+  }
+
   function handleOptimizeMatches() {
     if (!activePool) return;
 
@@ -1278,7 +1419,7 @@ function App() {
                 ? pool
                 : {
                   ...pool,
-                  matches: optimizeMatchOrder(pool.matches),
+                  matches: normalizePoolMatchesToFftPadelRotation(pool, pool.matches),
                 }
         )
     );
@@ -1407,6 +1548,7 @@ function App() {
       setActiveTab(imported.activeTab || 'base');
       setFinalStage(imported.finalStage || createEmptyFinalStage());
       setCourtCount(imported.courtCount || 4);
+      setCourtLabels(normalizeCourtLabels(imported.courtLabels, imported.courtCount || 4));
       setEditingBaseTeamId(null);
       setEditingBaseDraft(null);
     } catch (error) {
@@ -1559,6 +1701,15 @@ function App() {
 
               <button
                   type="button"
+                  title="Modifier la numérotation des terrains"
+                  onClick={() => setIsCourtSettingsOpen((prev) => !prev)}
+              >
+                <FaCog />
+                Terrains
+              </button>
+
+              <button
+                  type="button"
                   onClick={() =>
                       exportTournamentToCSV(
                           baseTeams,
@@ -1599,6 +1750,49 @@ function App() {
               </button>
             </div>
           </div>
+
+          {isCourtSettingsOpen && (
+              <div
+                  className="card"
+                  style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.08)' }}
+              >
+                <div className="section-head">
+                  <div>
+                    <h2>Numérotation manuelle des terrains</h2>
+                    <p className="note">
+                      Modifie ici le numéro affiché pour chaque terrain. Exemple : le terrain interne 1
+                      peut devenir le terrain réel 3, selon l’organisation du complexe. Dans le tableau des matchs, l’engrenage de chaque ligne permet aussi de changer le terrain uniquement pour ce match.
+                    </p>
+                  </div>
+                  <button type="button" onClick={resetCourtLabels}>
+                    Réinitialiser
+                  </button>
+                </div>
+
+                <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: '0.75rem',
+                    }}
+                >
+                  {courtLabels.map((label, index) => (
+                      <label
+                          key={`court-label-${index}`}
+                          style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', color: 'white' }}
+                      >
+                        Terrain interne {index + 1}
+                        <input
+                            type="text"
+                            value={label}
+                            onChange={(event) => handleCourtLabelChange(index, event.target.value)}
+                            placeholder={`Terrain ${index + 1}`}
+                        />
+                      </label>
+                  ))}
+                </div>
+              </div>
+          )}
         </section>
 
         {activeTab === 'base' ? (
@@ -1948,7 +2142,7 @@ function App() {
               <h2>Planning global des rotations</h2>
               <p className="note">
                 Ce planning répartit les matchs de chaque poule sur les terrains disponibles.
-                Les rotations restent respectées en arrière-plan, mais l’affichage est présenté ici match par match.
+                Les rotations FFT/Padel sont respectées, et les terrains affichés utilisent ta numérotation manuelle.
               </p>
 
               <div className="table-wrapper">
@@ -1972,7 +2166,7 @@ function App() {
                           <tr key={`${row.slot}-${row.terrain}-${index}`}>
                             <td>{index + 1}</td>
                             <td>{row.poolName}</td>
-                            <td>{row.terrain}</td>
+                            <td>{displayMatchCourtLabel(row.match, row.terrain)}</td>
                             <td>{getTeamNameById(row.match.teamAId)}</td>
                             <td>{getTeamNameById(row.match.teamBId)}</td>
                           </tr>
@@ -2323,12 +2517,6 @@ function App() {
                       ))}
                     </div>
                 )}
-
-                <div className="actions">
-                  <button type="button" onClick={handleOptimizeMatches}>
-                    Optimiser l’ordre des matchs
-                  </button>
-                </div>
               </section>
 
               <section className="card">
@@ -2353,7 +2541,7 @@ function App() {
                         </tr>
                         </thead>
                         <tbody>
-                        {optimizeMatchOrder(activePool.matches).map((match) => {
+                        {sortMatchesForDisplay(activePool.matches).map((match) => {
                           const winner = getWinner(match);
                           const scoreA = Number(match.scoreA);
                           const scoreB = Number(match.scoreB);
@@ -2378,7 +2566,54 @@ function App() {
                                 <td className={winner === 'A' ? 'winner-text' : ''}>
                                   {getTeamNameById(match.teamAId)}
                                 </td>
-                                <td>{match.localCourt || 1}</td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                    <strong>{displayMatchCourtLabel(match)}</strong>
+                                    <button
+                                        type="button"
+                                        className="small-btn"
+                                        title="Changer le terrain pour ce match uniquement"
+                                        onClick={() =>
+                                            setEditingMatchCourtId((currentId) =>
+                                                currentId === match.id ? null : match.id
+                                            )
+                                        }
+                                    >
+                                      <FaCog />
+                                    </button>
+                                  </div>
+
+                                  {editingMatchCourtId === match.id && (
+                                      <div
+                                          style={{
+                                            display: 'flex',
+                                            gap: '0.35rem',
+                                            alignItems: 'center',
+                                            marginTop: '0.45rem',
+                                            flexWrap: 'wrap',
+                                          }}
+                                      >
+                                        <input
+                                            type="text"
+                                            value={match.courtOverride || ''}
+                                            onChange={(event) =>
+                                                handleMatchCourtOverrideChange(match.id, event.target.value)
+                                            }
+                                            placeholder={`Terrain ${displayCourtLabel(match.localCourt || 1)}`}
+                                            style={{ width: 110 }}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="small-btn"
+                                            onClick={() => resetMatchCourtOverride(match.id)}
+                                            title="Revenir au terrain de base"
+                                        >
+                                          Base
+                                        </button>
+                                      </div>
+                                  )}
+                                </td>
+
                                 <td>
                                   <input
                                       type="number"
