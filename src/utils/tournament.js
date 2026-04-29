@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'matrice-padel-v8';
+export const STORAGE_KEY = 'matrice-padel-v8';
 
 function uid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -31,6 +31,7 @@ export function createTeam(data = {}) {
         matchLabel: String(data.matchLabel || data.name || '').trim(),
         players,
         cumulativeRank,
+        isSeed: Boolean(data.isSeed),
     };
 }
 
@@ -278,11 +279,148 @@ export function createDefaultState() {
         activeTab: 'base',
         finalStage: null,
         courtCount: 4,
+        courtLabels: ['1', '2', '3', '4'],
+        savedAt: null,
+    };
+}
+
+function normalizeTeam(team = {}) {
+    return createTeam({
+        id: team.id,
+        number: team.number,
+        name: team.name,
+        fullName: team.fullName,
+        matchLabel: team.matchLabel,
+        players: Array.isArray(team.players)
+            ? team.players.map((player) => createPlayer(player.name, player.rank, player.slot))
+            : [],
+        cumulativeRank: team.cumulativeRank,
+        isSeed: team.isSeed,
+    });
+}
+
+function normalizeMatch(match = {}) {
+    return {
+        id: match.id || uid(),
+        teamAId: match.teamAId,
+        teamBId: match.teamBId,
+        scoreA: match.scoreA ?? '',
+        scoreB: match.scoreB ?? '',
+        round: match.round || 1,
+        localCourt: match.localCourt || 1,
+        courtOverride: match.courtOverride || '',
+    };
+}
+
+function normalizeCourtLabelsForStorage(labels, courtCount) {
+    const safeCourtCount = Math.max(1, Number(courtCount) || 1);
+    const next = Array.isArray(labels)
+        ? labels.slice(0, safeCourtCount).map((label, index) => String(label || index + 1))
+        : [];
+
+    while (next.length < safeCourtCount) {
+        next.push(String(next.length + 1));
+    }
+
+    return next;
+}
+
+export function normalizeAppState(parsed) {
+    if (!parsed || !Array.isArray(parsed.pools)) {
+        return createDefaultState();
+    }
+
+    const baseTeams = Array.isArray(parsed.baseTeams) ? parsed.baseTeams.map(normalizeTeam) : [];
+
+    const pools = parsed.pools.map((pool) => {
+        const teams = Array.isArray(pool.teams) ? pool.teams.map(normalizeTeam) : [];
+        const importedMatches = Array.isArray(pool.matches) ? pool.matches.map(normalizeMatch) : [];
+        const importedByPair = new Map();
+
+        importedMatches.forEach((match) => {
+            if (!match.teamAId || !match.teamBId) return;
+            importedByPair.set(pairKey(match.teamAId, match.teamBId), match);
+        });
+
+        const matches = syncMatchesPreserveScores(teams, importedMatches).map((match) => {
+            const imported = importedByPair.get(pairKey(match.teamAId, match.teamBId));
+            return imported ? { ...match, courtOverride: imported.courtOverride || '' } : match;
+        });
+
+        return {
+            id: pool.id || uid(),
+            name: pool.name || 'Poule',
+            teams,
+            matches,
+        };
+    });
+
+    const serpentin = {};
+    const rawSerpentin = parsed.serpentin || {};
+
+    pools.forEach((pool) => {
+        const entries = rawSerpentin[pool.id] || [];
+        serpentin[pool.id] = Array.isArray(entries)
+            ? entries.map((entry) =>
+                typeof entry === 'string'
+                    ? createSerpentinEntry(entry)
+                    : {
+                        id: entry.id || uid(),
+                        value: String(entry.value ?? ''),
+                    }
+            )
+            : [];
+    });
+
+    const courtCount = Number(parsed.courtCount) > 0 ? Number(parsed.courtCount) : 4;
+
+    return {
+        baseTeams,
+        pools,
+        serpentin,
+        activeTab:
+            parsed.activeTab === 'base' ||
+            parsed.activeTab === 'serpentin' ||
+            parsed.activeTab === 'planning' ||
+            parsed.activeTab === 'finals' ||
+            parsed.activeTab === 'final-ranking' ||
+            pools.some((pool) => pool.id === parsed.activeTab)
+                ? parsed.activeTab
+                : 'base',
+        finalStage: parsed.finalStage || null,
+        courtCount,
+        courtLabels: normalizeCourtLabelsForStorage(parsed.courtLabels, courtCount),
+        savedAt: parsed.savedAt || null,
     };
 }
 
 export function saveAppState(state) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const stateWithMetadata = {
+        ...state,
+        savedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stateWithMetadata));
+    return stateWithMetadata.savedAt;
+}
+
+export function clearAppState() {
+    localStorage.removeItem(STORAGE_KEY);
+}
+
+export function getLocalSaveInfo() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+
+        return {
+            savedAt: parsed.savedAt || null,
+            size: raw.length,
+        };
+    } catch {
+        return null;
+    }
 }
 
 export function loadAppState() {
@@ -293,102 +431,7 @@ export function loadAppState() {
             return createDefaultState();
         }
 
-        const parsed = JSON.parse(raw);
-
-        if (!parsed || !Array.isArray(parsed.pools)) {
-            return createDefaultState();
-        }
-
-        const baseTeams = Array.isArray(parsed.baseTeams)
-            ? parsed.baseTeams.map((team) =>
-                createTeam({
-                    id: team.id,
-                    number: team.number,
-                    name: team.name,
-                    fullName: team.fullName,
-                    matchLabel: team.matchLabel,
-                    players: Array.isArray(team.players)
-                        ? team.players.map((player) =>
-                            createPlayer(player.name, player.rank, player.slot)
-                        )
-                        : [],
-                    cumulativeRank: team.cumulativeRank,
-                })
-            )
-            : [];
-
-        const pools = parsed.pools.map((pool) => {
-            const teams = Array.isArray(pool.teams)
-                ? pool.teams.map((team) =>
-                    createTeam({
-                        id: team.id,
-                        number: team.number,
-                        name: team.name,
-                        fullName: team.fullName,
-                        matchLabel: team.matchLabel,
-                        players: Array.isArray(team.players)
-                            ? team.players.map((player) =>
-                                createPlayer(player.name, player.rank, player.slot)
-                            )
-                            : [],
-                        cumulativeRank: team.cumulativeRank,
-                    })
-                )
-                : [];
-
-            const matches = Array.isArray(pool.matches)
-                ? pool.matches.map((match) => ({
-                    id: match.id || uid(),
-                    teamAId: match.teamAId,
-                    teamBId: match.teamBId,
-                    scoreA: match.scoreA ?? '',
-                    scoreB: match.scoreB ?? '',
-                    round: match.round || 1,
-                    localCourt: match.localCourt || 1,
-                }))
-                : [];
-
-            return {
-                id: pool.id || uid(),
-                name: pool.name || 'Poule',
-                teams,
-                matches: syncMatchesPreserveScores(teams, matches),
-            };
-        });
-
-        const serpentin = {};
-        const rawSerpentin = parsed.serpentin || {};
-
-        pools.forEach((pool) => {
-            const entries = rawSerpentin[pool.id] || [];
-            serpentin[pool.id] = Array.isArray(entries)
-                ? entries.map((entry) =>
-                    typeof entry === 'string'
-                        ? createSerpentinEntry(entry)
-                        : {
-                            id: entry.id || uid(),
-                            value: String(entry.value ?? ''),
-                        }
-                )
-                : [];
-        });
-
-        return {
-            baseTeams,
-            pools,
-            serpentin,
-            activeTab:
-                parsed.activeTab === 'base' ||
-                parsed.activeTab === 'serpentin' ||
-                parsed.activeTab === 'planning' ||
-                parsed.activeTab === 'finals' ||
-                parsed.activeTab === 'final-ranking' ||
-                pools.some((pool) => pool.id === parsed.activeTab)
-                    ? parsed.activeTab
-                    : 'base',
-            finalStage: parsed.finalStage || null,
-            courtCount: Number(parsed.courtCount) > 0 ? Number(parsed.courtCount) : 4,
-        };
+        return normalizeAppState(JSON.parse(raw));
     } catch {
         return createDefaultState();
     }

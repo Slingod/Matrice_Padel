@@ -1,0 +1,153 @@
+import {
+    FaCog,
+    FaFileCsv,
+    FaFileExcel,
+    FaFileImport,
+    FaSave,
+} from 'react-icons/fa';
+import { exportTournamentToCSV, exportTournamentToXLSX } from '../../utils/importExport';
+
+function AppToolbar({ ctx }) {
+    const {
+        activeTab,
+        baseTeams,
+        combinedPointsRanking,
+        courtCount,
+        courtLabels,
+        finalRanking,
+        handleAddPool,
+        handleCourtLabelChange,
+        handleExportJson,
+        handleImportFile,
+        importInputRef,
+        isCourtSettingsOpen,
+        newPoolName,
+        pools,
+        resetCourtLabels,
+        safeFinalStage,
+        saveNotice,
+        serpentin,
+        setActiveTab,
+        setCourtCount,
+        setIsCourtSettingsOpen,
+        setNewPoolName,
+        triggerImport,
+    } = ctx;
+
+    return (
+        <section className="tabs-card">
+            <div className="tabs">
+                <button type="button" className={`tab-button ${activeTab === 'base' ? 'active' : ''}`} onClick={() => setActiveTab('base')}>
+                    Base
+                </button>
+
+                <button type="button" className={`tab-button ${activeTab === 'serpentin' ? 'active' : ''}`} onClick={() => setActiveTab('serpentin')}>
+                    Serpentin
+                </button>
+
+                <button type="button" className={`tab-button ${activeTab === 'planning' ? 'active' : ''}`} onClick={() => setActiveTab('planning')}>
+                    Planning
+                </button>
+
+                {pools.map((pool) => (
+                    <button key={pool.id} type="button" className={`tab-button ${activeTab === pool.id ? 'active' : ''}`} onClick={() => setActiveTab(pool.id)}>
+                        {pool.name}
+                    </button>
+                ))}
+
+                <button type="button" className={`tab-button ${activeTab === 'finals' ? 'active' : ''}`} onClick={() => setActiveTab('finals')}>
+                    Phase finale
+                </button>
+
+                <button type="button" className={`tab-button ${activeTab === 'final-ranking' ? 'active' : ''}`} onClick={() => setActiveTab('final-ranking')}>
+                    Classement final
+                </button>
+
+                <button type="button" className={`tab-button tab-button-save ${activeTab === 'saves' ? 'active' : ''}`} onClick={() => setActiveTab('saves')}>
+                    Mes tournois
+                </button>
+            </div>
+
+            <div className="top-actions-grid">
+                <form className="add-pool-form" onSubmit={handleAddPool}>
+                    <input type="text" placeholder="Nouvelle poule" value={newPoolName} onChange={(event) => setNewPoolName(event.target.value)} />
+                    <button type="submit">Ajouter une Poule</button>
+                </form>
+
+                <div className="export-actions">
+                    <input ref={importInputRef} type="file" accept=".xlsx,.csv,.json" onChange={handleImportFile} hidden />
+
+                    <button type="button" onClick={triggerImport}>
+                        <FaFileImport />
+                        Importer XLSX / CSV / JSON
+                    </button>
+
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
+                        Terrains dispo
+                        <input
+                            type="number"
+                            min="1"
+                            value={courtCount}
+                            onChange={(event) => setCourtCount(Math.max(1, Number(event.target.value) || 1))}
+                            style={{ width: 90 }}
+                        />
+                    </label>
+
+                    <button type="button" title="Modifier la numérotation des terrains" onClick={() => setIsCourtSettingsOpen((prev) => !prev)}>
+                        <FaCog />
+                        Terrains
+                    </button>
+
+                    <button type="button" onClick={handleExportJson}>
+                        <FaSave />
+                        Exporter JSON
+                    </button>
+
+                    <button type="button" onClick={() => exportTournamentToCSV(baseTeams, pools, serpentin, safeFinalStage, finalRanking, combinedPointsRanking, courtCount)}>
+                        <FaFileCsv />
+                        Exporter CSV
+                    </button>
+
+                    <button type="button" onClick={() => exportTournamentToXLSX(baseTeams, pools, serpentin, safeFinalStage, finalRanking, combinedPointsRanking, courtCount)}>
+                        <FaFileExcel />
+                        Exporter XLSX
+                    </button>
+                </div>
+
+                {saveNotice && (
+                    <div className={`autosave-info ${saveNotice.type || 'success'}`} role="status" aria-live="polite">
+                        <strong>{saveNotice.title}</strong>
+                        <span>{saveNotice.message}</span>
+                    </div>
+                )}
+            </div>
+
+            {isCourtSettingsOpen && (
+                <div className="card" style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.08)' }}>
+                    <div className="section-head">
+                        <div>
+                            <h2>Numérotation manuelle des terrains</h2>
+                            <p className="note">
+                                Modifie ici le numéro affiché pour chaque terrain. Exemple : le terrain interne 1 peut devenir le terrain réel 3, selon l’organisation du complexe. Dans le tableau des matchs, l’engrenage de chaque ligne permet aussi de changer le terrain uniquement pour ce match.
+                            </p>
+                        </div>
+                        <button type="button" onClick={resetCourtLabels}>
+                            Réinitialiser
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                        {courtLabels.map((label, index) => (
+                            <label key={`court-label-${index}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', color: 'white' }}>
+                                Terrain interne {index + 1}
+                                <input type="text" value={label} onChange={(event) => handleCourtLabelChange(index, event.target.value)} placeholder={`Terrain ${index + 1}`} />
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </section>
+    );
+}
+
+export default AppToolbar;
