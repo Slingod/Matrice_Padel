@@ -997,19 +997,19 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
 
     function handleStartNewTournament() {
         const confirmed = window.confirm(
-            'Repartir sur un nouveau tournoi vide ?\n\nTes sauvegardes nommées seront conservées et tu pourras les recharger plus tard.'
+            'Réinitialiser le tournoi actuellement ouvert ?\n\nCela vide uniquement les données du tournoi en cours. Tes sauvegardes nommées restent conservées dans l’onglet Mes tournois.'
         );
 
         if (!confirmed) return;
 
         clearAppState();
-        applyTournamentState(createDefaultState());
+        applyTournamentState({ ...createDefaultState(), activeTab: 'base' });
         setSelectedTournamentSaveId('');
         setTournamentSaveName('');
         setSaveNotice({
             type: 'success',
-            title: 'Nouveau tournoi prêt',
-            message: 'Les sauvegardes nommées sont conservées sur cet appareil.',
+            title: 'Tournoi réinitialisé',
+            message: 'Le tournoi en cours est vide. Tes sauvegardes nommées sont conservées sur cet appareil.',
         });
     }
 

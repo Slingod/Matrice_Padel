@@ -1,4 +1,4 @@
-import { FaEdit, FaExchangeAlt, FaPlus, FaSave, FaStar, FaTimes, FaTrash } from 'react-icons/fa';
+import { FaEdit, FaExchangeAlt, FaPlus, FaSave, FaStar, FaTimes, FaTrash, FaUndoAlt } from 'react-icons/fa';
 
 function Base({ ctx }) {
     const {
@@ -39,6 +39,7 @@ function Base({ ctx }) {
         handleMatchScoreChange,
         handleNewBaseDraftChange,
         handleQuarterTeamChange,
+        handleResetLocalData,
         handleSaveBaseEdit,
         handleSerpentinDragEnd,
         handleStartBaseEdit,
@@ -65,6 +66,25 @@ function Base({ ctx }) {
 
     return (
         <section className="card full-width">
+            <div className="section-head base-section-head">
+                <div>
+                    <h2>Base équipes / joueurs</h2>
+                    <p className="note">
+                        Gère ici les équipes du tournoi actuellement ouvert. Le bouton de réinitialisation vide uniquement ce tournoi en cours et conserve tes tournois sauvegardés dans l’onglet Mes tournois.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    className="danger small-btn reset-current-tournament-btn"
+                    onClick={handleResetLocalData}
+                    title="Vider le tournoi actuellement ouvert sans supprimer les sauvegardes nommées"
+                >
+                    <FaUndoAlt />
+                    Réinitialiser ce tournoi
+                </button>
+            </div>
+
             <div className="table-wrapper">
                 <table>
                     <thead>
@@ -246,7 +266,7 @@ function Base({ ctx }) {
 
             <hr style={{ margin: '28px 0', opacity: 0.18 }} />
 
-            <h2>Base équipes / joueurs</h2>
+            <h2>Ajouter une équipe</h2>
             <p className="note">
                 Tu peux modifier les joueurs, leurs rangs, le nom affiché, inverser Joueur 1 / Joueur 2, ou cliquer sur l’étoile devant une équipe pour la passer en TS / VIP.
                 Les équipes classiques sont renumérotées automatiquement, et les têtes de série sont affichées en TS 1, TS 2, etc.

@@ -22,8 +22,6 @@ const LEGAL_CONTENT = {
         title: 'Conditions générales de vente',
         body: [
             "Cette section est une base de travail pour une future version payante.",
-            "Avant toute mise en vente, il faudra préciser le prix, la durée de l’abonnement, l’essai gratuit éventuel, les modalités de paiement, de renouvellement, de résiliation et de remboursement.",
-            "Pour une vente via Google Play, les achats numériques doivent être cohérents avec les règles de paiement applicables sur la plateforme.",
         ],
     },
 };
