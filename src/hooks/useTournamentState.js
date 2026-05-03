@@ -22,16 +22,17 @@ import {
     saveNamedTournament,
 } from '../utils/persistence';
 import {
-    assignQuarterTeam,
+    assignStageTeam,
     buildFinalRanking,
     createEmptyFinalStage,
+    getFinalStageMatchesForStats,
     setFinalStageOption,
     syncFinalStageWithTeams,
     updateFinalStageMatch,
 } from '../utils/finalStage';
 import {
     applyMatchToStats,
-    buildAutoQuarterDraw,
+    buildAutoFinalDraw,
     buildBalancedRandomSerpentin,
     buildGlobalPlanning,
     buildTeamFromDraft,
@@ -240,53 +241,9 @@ export function useTournamentState() {
             });
         });
 
-        safeFinalStage.quarterFinals.forEach((match) => {
+        getFinalStageMatchesForStats(safeFinalStage).forEach((match) => {
             applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
         });
-
-        safeFinalStage.semiFinals.forEach((match) => {
-            applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
-        });
-
-        applyMatchToStats(
-            statMap,
-            safeFinalStage.final.teamAId,
-            safeFinalStage.final.teamBId,
-            safeFinalStage.final.scoreA,
-            safeFinalStage.final.scoreB
-        );
-
-        if (safeFinalStage.settings.enableThirdPlaceMatch) {
-            applyMatchToStats(
-                statMap,
-                safeFinalStage.thirdPlace.teamAId,
-                safeFinalStage.thirdPlace.teamBId,
-                safeFinalStage.thirdPlace.scoreA,
-                safeFinalStage.thirdPlace.scoreB
-            );
-        }
-
-        if (safeFinalStage.settings.enablePlacement5to8) {
-            safeFinalStage.placement5to8Semis.forEach((match) => {
-                applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
-            });
-
-            applyMatchToStats(
-                statMap,
-                safeFinalStage.placement5to8Finals.place5.teamAId,
-                safeFinalStage.placement5to8Finals.place5.teamBId,
-                safeFinalStage.placement5to8Finals.place5.scoreA,
-                safeFinalStage.placement5to8Finals.place5.scoreB
-            );
-
-            applyMatchToStats(
-                statMap,
-                safeFinalStage.placement5to8Finals.place7.teamAId,
-                safeFinalStage.placement5to8Finals.place7.teamBId,
-                safeFinalStage.placement5to8Finals.place7.scoreA,
-                safeFinalStage.placement5to8Finals.place7.scoreB
-            );
-        }
 
         return [...statMap.values()]
             .filter(
@@ -307,53 +264,9 @@ export function useTournamentState() {
     const finalOnlyPointsRanking = useMemo(() => {
         const statMap = new Map(allTeams.map((team) => [team.id, createCombinedStatRow(team)]));
 
-        safeFinalStage.quarterFinals.forEach((match) => {
+        getFinalStageMatchesForStats(safeFinalStage).forEach((match) => {
             applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
         });
-
-        safeFinalStage.semiFinals.forEach((match) => {
-            applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
-        });
-
-        applyMatchToStats(
-            statMap,
-            safeFinalStage.final.teamAId,
-            safeFinalStage.final.teamBId,
-            safeFinalStage.final.scoreA,
-            safeFinalStage.final.scoreB
-        );
-
-        if (safeFinalStage.settings.enableThirdPlaceMatch) {
-            applyMatchToStats(
-                statMap,
-                safeFinalStage.thirdPlace.teamAId,
-                safeFinalStage.thirdPlace.teamBId,
-                safeFinalStage.thirdPlace.scoreA,
-                safeFinalStage.thirdPlace.scoreB
-            );
-        }
-
-        if (safeFinalStage.settings.enablePlacement5to8) {
-            safeFinalStage.placement5to8Semis.forEach((match) => {
-                applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
-            });
-
-            applyMatchToStats(
-                statMap,
-                safeFinalStage.placement5to8Finals.place5.teamAId,
-                safeFinalStage.placement5to8Finals.place5.teamBId,
-                safeFinalStage.placement5to8Finals.place5.scoreA,
-                safeFinalStage.placement5to8Finals.place5.scoreB
-            );
-
-            applyMatchToStats(
-                statMap,
-                safeFinalStage.placement5to8Finals.place7.teamAId,
-                safeFinalStage.placement5to8Finals.place7.teamBId,
-                safeFinalStage.placement5to8Finals.place7.scoreA,
-                safeFinalStage.placement5to8Finals.place7.scoreB
-            );
-        }
 
         return [...statMap.values()]
             .filter(
@@ -402,6 +315,23 @@ export function useTournamentState() {
 
         return ids;
     }, [safeFinalStage.quarterFinals]);
+
+    const starterFinalStageKey = safeFinalStage.settings.entryRound === 'round16'
+        ? 'roundOf16'
+        : safeFinalStage.settings.entryRound === 'semi'
+            ? 'semiFinals'
+            : 'quarterFinals';
+
+    const selectedStarterTeamIds = useMemo(() => {
+        const ids = new Set();
+
+        (safeFinalStage[starterFinalStageKey] || []).forEach((match) => {
+            if (match.teamAId) ids.add(match.teamAId);
+            if (match.teamBId) ids.add(match.teamBId);
+        });
+
+        return ids;
+    }, [safeFinalStage, starterFinalStageKey]);
 
     const globalPlanning = useMemo(
         () => buildGlobalPlanning(pools, Math.max(1, Number(courtCount) || 1)),
@@ -515,6 +445,7 @@ export function useTournamentState() {
             .map((pool) => pool.name);
 
         const finalStageUsesTeam = [
+            ...(safeFinalStage.roundOf16 || []),
             ...safeFinalStage.quarterFinals,
             ...safeFinalStage.semiFinals,
             safeFinalStage.final,
@@ -768,80 +699,129 @@ export function useTournamentState() {
         );
     }
 
-    function handleAutoQuarterDraw() {
-        const draw = buildAutoQuarterDraw({ rankedPools, allTeams });
+    function resetFinalProgress(baseStage) {
+        return {
+            ...baseStage,
+            roundOf16: (baseStage.roundOf16 || []).map((match) => ({
+                ...match,
+                teamAId: '',
+                teamBId: '',
+                scoreA: '',
+                scoreB: '',
+            })),
+            quarterFinals: baseStage.quarterFinals.map((match) => ({
+                ...match,
+                teamAId: '',
+                teamBId: '',
+                scoreA: '',
+                scoreB: '',
+            })),
+            semiFinals: baseStage.semiFinals.map((match) => ({
+                ...match,
+                teamAId: '',
+                teamBId: '',
+                scoreA: '',
+                scoreB: '',
+            })),
+            final: {
+                ...baseStage.final,
+                teamAId: '',
+                teamBId: '',
+                scoreA: '',
+                scoreB: '',
+            },
+            thirdPlace: {
+                ...baseStage.thirdPlace,
+                teamAId: '',
+                teamBId: '',
+                scoreA: '',
+                scoreB: '',
+            },
+            placement5to8Semis: (baseStage.placement5to8Semis || []).map((match) => ({
+                ...match,
+                teamAId: '',
+                teamBId: '',
+                scoreA: '',
+                scoreB: '',
+            })),
+            placement5to8Finals: {
+                place5: {
+                    ...baseStage.placement5to8Finals.place5,
+                    teamAId: '',
+                    teamBId: '',
+                    scoreA: '',
+                    scoreB: '',
+                },
+                place7: {
+                    ...baseStage.placement5to8Finals.place7,
+                    teamAId: '',
+                    teamBId: '',
+                    scoreA: '',
+                    scoreB: '',
+                },
+            },
+        };
+    }
 
-        if (!draw.length) {
-            alert('Pas assez d’équipes qualifiées pour générer automatiquement la phase finale.');
+    function handleAutoQuarterDraw() {
+        const draw = buildAutoFinalDraw({
+            rankedPools,
+            allTeams,
+            qualifierMode: safeFinalStage.settings.poolQualifierMode,
+        });
+
+        if (!draw?.matches?.length) {
+            alert('Pas assez d’équipes qualifiées pour générer automatiquement la phase finale. Il faut au minimum 4 équipes qualifiées.');
             return;
         }
 
         setFinalStage((prev) => {
-            const baseStage = syncFinalStageWithTeams(prev || createEmptyFinalStage(), allTeams);
-
-            const nextQuarterFinals = baseStage.quarterFinals.map((match, index) => {
-                const source = draw[index];
-
-                return {
-                    ...match,
-                    teamAId: source?.teamAId || '',
-                    teamBId: source?.teamBId || '',
-                    scoreA: '',
-                    scoreB: '',
-                };
-            });
+            const baseStage = resetFinalProgress(syncFinalStageWithTeams(prev || createEmptyFinalStage(), allTeams));
+            const targetKey = draw.entryRound === 'round16'
+                ? 'roundOf16'
+                : draw.entryRound === 'semi'
+                    ? 'semiFinals'
+                    : 'quarterFinals';
 
             const nextStage = {
                 ...baseStage,
-                quarterFinals: nextQuarterFinals,
-                semiFinals: baseStage.semiFinals.map((match) => ({
-                    ...match,
-                    teamAId: '',
-                    teamBId: '',
-                    scoreA: '',
-                    scoreB: '',
-                })),
-                final: {
-                    ...baseStage.final,
-                    teamAId: '',
-                    teamBId: '',
-                    scoreA: '',
-                    scoreB: '',
+                settings: {
+                    ...baseStage.settings,
+                    entryRound: draw.entryRound,
                 },
-                thirdPlace: {
-                    ...baseStage.thirdPlace,
-                    teamAId: '',
-                    teamBId: '',
-                    scoreA: '',
-                    scoreB: '',
-                },
-                placement5to8Semis: (baseStage.placement5to8Semis || []).map((match) => ({
-                    ...match,
-                    teamAId: '',
-                    teamBId: '',
-                    scoreA: '',
-                    scoreB: '',
-                })),
-                placement5to8Finals: {
-                    place5: {
-                        ...baseStage.placement5to8Finals.place5,
-                        teamAId: '',
-                        teamBId: '',
+                [targetKey]: baseStage[targetKey].map((match, index) => {
+                    const source = draw.matches[index];
+
+                    return {
+                        ...match,
+                        teamAId: source?.teamAId || '',
+                        teamBId: source?.teamBId || '',
                         scoreA: '',
                         scoreB: '',
-                    },
-                    place7: {
-                        ...baseStage.placement5to8Finals.place7,
-                        teamAId: '',
-                        teamBId: '',
-                        scoreA: '',
-                        scoreB: '',
-                    },
-                },
+                    };
+                }),
             };
 
             return syncFinalStageWithTeams(nextStage, allTeams);
         });
+    }
+
+    function handleFinalStageEntryRoundChange(value) {
+        setFinalStage((prev) =>
+            syncFinalStageWithTeams(
+                setFinalStageOption(prev || createEmptyFinalStage(), 'entryRound', value),
+                allTeams
+            )
+        );
+    }
+
+    function handleFinalQualifierModeChange(value) {
+        setFinalStage((prev) =>
+            syncFinalStageWithTeams(
+                setFinalStageOption(prev || createEmptyFinalStage(), 'poolQualifierMode', value),
+                allTeams
+            )
+        );
     }
 
     function handleToggleThirdPlace() {
@@ -1064,13 +1044,17 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         handleStartNewTournament();
     }
 
-    function handleQuarterTeamChange(matchIndex, field, teamId) {
+    function handleFinalStageTeamChange(stageKey, matchIndex, field, teamId) {
         setFinalStage((prev) =>
             syncFinalStageWithTeams(
-                assignQuarterTeam(prev || createEmptyFinalStage(), matchIndex, field, teamId),
+                assignStageTeam(prev || createEmptyFinalStage(), stageKey, matchIndex, field, teamId),
                 allTeams
             )
         );
+    }
+
+    function handleQuarterTeamChange(matchIndex, field, teamId) {
+        handleFinalStageTeamChange('quarterFinals', matchIndex, field, teamId);
     }
 
     function handleFinalMatchScore(stageKey, matchIndex, field, value) {
@@ -1122,6 +1106,9 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         handleDeletePool,
         handleDeleteSerpentinRow,
         handleFinalMatchScore,
+        handleFinalQualifierModeChange,
+        handleFinalStageEntryRoundChange,
+        handleFinalStageTeamChange,
         handleMatchCourtOverrideChange,
         handleMatchScoreChange,
         handleNewBaseDraftChange,
@@ -1139,10 +1126,12 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         rankedPools,
         ranking,
         safeFinalStage,
+        starterFinalStageKey,
         seedTeamIds,
         seedTeamNumberById,
         seedTeams,
         selectedQuarterTeamIds,
+        selectedStarterTeamIds,
         selectedSerpentinTeamIds,
         sensors,
         serpentin,

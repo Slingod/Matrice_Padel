@@ -2,20 +2,29 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
+
     VitePWA({
       registerType: 'autoUpdate',
+
+      // En développement, on désactive la génération du Service Worker
+      // pour éviter l'erreur Workbox :
+      // "Unexpected token '<', '<!doctype ... is not valid JSON"
+      disable: command === 'serve',
+
       devOptions: {
-        enabled: true,
+        enabled: false,
       },
+
       includeAssets: [
         'apple-touch-icon.png',
         'pwa-192x192.png',
         'pwa-512x512.png',
         'maskable-icon-512x512.png',
       ],
+
       manifest: {
         name: 'Matrice PADEL',
         short_name: 'MatricePadel',
@@ -28,28 +37,32 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: 'pwa-512x512.png',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: 'maskable-icon-512x512.png',
+            src: '/maskable-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
           },
           {
-            src: 'apple-touch-icon.png',
+            src: '/apple-touch-icon.png',
             sizes: '180x180',
             type: 'image/png',
           },
         ],
       },
+
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,json}'],
+      },
     }),
   ],
-});
+}));

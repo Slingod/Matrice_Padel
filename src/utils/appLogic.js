@@ -145,6 +145,7 @@ export function clearTeamFromFinalStage(stage, teamId) {
 
     return {
         ...baseStage,
+        roundOf16: (baseStage.roundOf16 || []).map(clearMatch),
         quarterFinals: (baseStage.quarterFinals || []).map(clearMatch),
         semiFinals: (baseStage.semiFinals || []).map(clearMatch),
         final: clearMatch(baseStage.final),
@@ -405,8 +406,18 @@ export function pairSeedsWithOpponents(seedSlots, opponents) {
     return recurse(0, opponents, []) || [];
 }
 
-export function buildAutoQuarterDraw({ rankedPools, allTeams }) {
-    const tsTeams = getSeedTeams(allTeams)
+
+function compareQualifiedTeams(a, b) {
+    if ((a.poolRank || 999) !== (b.poolRank || 999)) return (a.poolRank || 999) - (b.poolRank || 999);
+    if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
+    if ((b.totalScore || 0) !== (a.totalScore || 0)) return (b.totalScore || 0) - (a.totalScore || 0);
+    if ((b.diff || 0) !== (a.diff || 0)) return (b.diff || 0) - (a.diff || 0);
+    if ((b.pointsFor || 0) !== (a.pointsFor || 0)) return (b.pointsFor || 0) - (a.pointsFor || 0);
+    return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
+}
+
+function buildSeedTeamRows(allTeams) {
+    return getSeedTeams(allTeams)
         .slice(0, 4)
         .map((team, index) => ({
             teamId: team.id,
@@ -414,108 +425,187 @@ export function buildAutoQuarterDraw({ rankedPools, allTeams }) {
             cumulativeRank: team.cumulativeRank || 0,
             poolId: null,
             poolName: 'TS',
+            poolRank: 0,
+            wins: 0,
+            totalScore: 0,
+            diff: 0,
+            pointsFor: 0,
             type: 'ts',
             tsNumber: index + 1,
         }));
+}
 
-    const usedTsIds = new Set(tsTeams.map((team) => team.teamId));
+function buildQualifiedPoolRows(rankedPools, usedTsIds, qualifierMode = 'top2') {
+    const rows = rankedPools.flatMap((pool) =>
+        (pool.ranking || [])
+            .filter((team) => !usedTsIds.has(team.teamId))
+            .map((team, rankIndex) => ({
+                teamId: team.teamId,
+                teamName: team.teamName,
+                cumulativeRank: team.cumulativeRank || 0,
+                poolId: pool.id,
+                poolName: pool.name,
+                poolRank: rankIndex + 1,
+                wins: team.wins || 0,
+                totalScore: team.totalScore || 0,
+                diff: team.diff || 0,
+                pointsFor: team.pointsFor || 0,
+                type: rankIndex === 0 ? 'winner' : rankIndex === 1 ? 'second' : 'extra',
+            }))
+    );
 
-    const qualifiedFromPools = rankedPools
-        .flatMap((pool) =>
-            pool.ranking
-                .filter((team) => !usedTsIds.has(team.teamId))
-                .map((team, rankIndex) => ({
-                    teamId: team.teamId,
-                    teamName: team.teamName,
-                    cumulativeRank: team.cumulativeRank || 0,
-                    poolId: pool.id,
-                    poolName: pool.name,
-                    poolRank: rankIndex + 1,
-                    wins: team.wins || 0,
-                    totalScore: team.totalScore || 0,
-                    diff: team.diff || 0,
-                    pointsFor: team.pointsFor || 0,
-                    type: rankIndex === 0 ? 'winner' : rankIndex === 1 ? 'second' : 'extra',
-                }))
-        )
-        .sort((a, b) => {
-            if (a.poolRank !== b.poolRank) return a.poolRank - b.poolRank;
-            if (b.wins !== a.wins) return b.wins - a.wins;
-            if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-            if (b.diff !== a.diff) return b.diff - a.diff;
-            if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
-            return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
-        });
-
-    const tsByNumber = {
-        1: tsTeams.find((team) => team.tsNumber === 1) || null,
-        2: tsTeams.find((team) => team.tsNumber === 2) || null,
-        3: tsTeams.find((team) => team.tsNumber === 3) || null,
-        4: tsTeams.find((team) => team.tsNumber === 4) || null,
-    };
-
-    // Ordre FÉDÉ figé :
-    // Quart 1 = TS2 en haut
-    // Quart 2 = TS3 en haut
-    // Quart 3 = TS4 en bas
-    // Quart 4 = TS1 en bas
-    const fixedSeedSlots = [
-        { seed: tsByNumber[2], seedPosition: 'A' }, // Q1
-        { seed: tsByNumber[3], seedPosition: 'A' }, // Q2
-        { seed: tsByNumber[4], seedPosition: 'B' }, // Q3
-        { seed: tsByNumber[1], seedPosition: 'B' }, // Q4
-    ];
-
-    const qualifiedQueue = [...qualifiedFromPools];
-    const seededSlots = fixedSeedSlots.map((slot) => {
-        if (slot.seed) return slot;
-        const fallback = qualifiedQueue.shift() || null;
-        return fallback ? { seed: fallback, seedPosition: slot.seedPosition } : null;
-    });
-
-    if (seededSlots.some((slot) => !slot?.seed)) return [];
-
-    const seededIds = new Set(seededSlots.map((slot) => slot.seed.teamId));
-    const remainingOpponents = qualifiedQueue.filter((team) => !seededIds.has(team.teamId));
-
-    if (remainingOpponents.length < 4) return [];
-
-    const findOpponent = (seed, available) => {
-        const differentPool = available.find(
-            (candidate) => !seed.poolId || !candidate.poolId || candidate.poolId !== seed.poolId
-        );
-
-        return differentPool || available[0] || null;
-    };
-
-    const pickedOpponents = [];
-    let availableOpponents = [...remainingOpponents];
-
-    for (const slot of seededSlots) {
-        const opponent = findOpponent(slot.seed, availableOpponents);
-        if (!opponent) return [];
-
-        pickedOpponents.push(opponent);
-        availableOpponents = availableOpponents.filter((item) => item.teamId !== opponent.teamId);
+    if (qualifierMode === 'winners') {
+        return rows.filter((team) => team.poolRank === 1).sort(compareQualifiedTeams);
     }
 
-    return seededSlots.map((slot, index) => {
-        const opponent = pickedOpponents[index];
+    if (qualifierMode === 'best4') {
+        return rows.sort(compareQualifiedTeams).slice(0, 4);
+    }
 
-        if (slot.seedPosition === 'B') {
-            return {
-                teamAId: opponent?.teamId || '',
-                teamBId: slot.seed.teamId,
-                scoreA: '',
-                scoreB: '',
-            };
+    if (qualifierMode === 'all') {
+        return rows.sort(compareQualifiedTeams);
+    }
+
+    return rows.filter((team) => team.poolRank <= 2).sort(compareQualifiedTeams);
+}
+
+function buildEmptyMatches(count) {
+    return Array.from({ length: count }, () => ({ teamAId: '', teamBId: '', scoreA: '', scoreB: '' }));
+}
+
+function getBracketSize(teamCount) {
+    if (teamCount >= 16) return 16;
+    if (teamCount >= 8) return 8;
+    if (teamCount >= 4) return 4;
+    return 0;
+}
+
+function getFixedSeedSlot(tsNumber, bracketSize) {
+    if (bracketSize === 16) {
+        return {
+            2: { matchIndex: 0, field: 'teamAId' },
+            3: { matchIndex: 2, field: 'teamAId' },
+            4: { matchIndex: 5, field: 'teamBId' },
+            1: { matchIndex: 7, field: 'teamBId' },
+        }[tsNumber] || null;
+    }
+
+    if (bracketSize === 8) {
+        return {
+            2: { matchIndex: 0, field: 'teamAId' },
+            3: { matchIndex: 1, field: 'teamAId' },
+            4: { matchIndex: 2, field: 'teamBId' },
+            1: { matchIndex: 3, field: 'teamBId' },
+        }[tsNumber] || null;
+    }
+
+    return {
+        2: { matchIndex: 0, field: 'teamAId' },
+        1: { matchIndex: 1, field: 'teamBId' },
+    }[tsNumber] || null;
+}
+
+function placeFixedSeeds(matches, seedTeams, bracketSize) {
+    const usedIds = new Set();
+
+    seedTeams.forEach((seed) => {
+        const slot = getFixedSeedSlot(seed.tsNumber, bracketSize);
+        if (!slot || !matches[slot.matchIndex]) return;
+
+        matches[slot.matchIndex][slot.field] = seed.teamId;
+        usedIds.add(seed.teamId);
+    });
+
+    return usedIds;
+}
+
+function findTeamForSlot({ candidates, usedIds, oppositeTeam, preferWeakest }) {
+    const ordered = preferWeakest ? [...candidates].reverse() : [...candidates];
+    const differentPool = ordered.find(
+        (candidate) =>
+            !usedIds.has(candidate.teamId) &&
+            (!oppositeTeam?.poolId || !candidate.poolId || oppositeTeam.poolId !== candidate.poolId)
+    );
+
+    return differentPool || ordered.find((candidate) => !usedIds.has(candidate.teamId)) || null;
+}
+
+function fillBracketMatches(matches, candidates, teamRowMap) {
+    const usedIds = new Set(
+        matches.flatMap((match) => [match.teamAId, match.teamBId]).filter(Boolean)
+    );
+
+    matches.forEach((match, matchIndex) => {
+        ['teamAId', 'teamBId'].forEach((field) => {
+            if (match[field]) return;
+
+            const oppositeField = field === 'teamAId' ? 'teamBId' : 'teamAId';
+            const oppositeTeam = teamRowMap.get(match[oppositeField]);
+            const preferWeakest = Boolean(oppositeTeam && (oppositeTeam.type === 'ts' || oppositeTeam.poolRank === 1));
+            const picked = findTeamForSlot({ candidates, usedIds, oppositeTeam, preferWeakest });
+
+            if (!picked) return;
+            match[field] = picked.teamId;
+            usedIds.add(picked.teamId);
+        });
+
+        if (!match.teamAId || !match.teamBId) {
+            const remaining = candidates.filter((candidate) => !usedIds.has(candidate.teamId));
+            if (!match.teamAId && remaining[0]) {
+                match.teamAId = remaining[0].teamId;
+                usedIds.add(remaining[0].teamId);
+            }
+            if (!match.teamBId && remaining[1]) {
+                match.teamBId = remaining[1].teamId;
+                usedIds.add(remaining[1].teamId);
+            }
         }
 
-        return {
-            teamAId: slot.seed.teamId,
-            teamBId: opponent?.teamId || '',
-            scoreA: '',
-            scoreB: '',
-        };
+        matches[matchIndex] = match;
     });
+
+    return matches;
+}
+
+export function buildAutoFinalDraw({ rankedPools, allTeams, qualifierMode = 'top2' }) {
+    const tsTeams = buildSeedTeamRows(allTeams);
+    const usedTsIds = new Set(tsTeams.map((team) => team.teamId));
+    const poolQualifiedTeams = buildQualifiedPoolRows(rankedPools, usedTsIds, qualifierMode);
+    const participants = [...tsTeams, ...poolQualifiedTeams];
+    const bracketSize = getBracketSize(participants.length);
+
+    if (!bracketSize) return null;
+
+    const matchCount = bracketSize / 2;
+    const matches = buildEmptyMatches(matchCount);
+    const teamRowMap = new Map(participants.map((team) => [team.teamId, team]));
+
+    placeFixedSeeds(matches, tsTeams, bracketSize);
+
+    const sortedParticipants = [...participants]
+        .sort((a, b) => {
+            if (a.type === 'ts' && b.type !== 'ts') return -1;
+            if (a.type !== 'ts' && b.type === 'ts') return 1;
+            if (a.type === 'ts' && b.type === 'ts') return (a.tsNumber || 999) - (b.tsNumber || 999);
+            return compareQualifiedTeams(a, b);
+        })
+        .slice(0, bracketSize);
+
+    const selectedIds = new Set(sortedParticipants.map((team) => team.teamId));
+    const selectedRows = sortedParticipants.filter((team) => selectedIds.has(team.teamId));
+    fillBracketMatches(matches, selectedRows, teamRowMap);
+
+    const entryRound = bracketSize === 16 ? 'round16' : bracketSize === 8 ? 'quarter' : 'semi';
+
+    return {
+        entryRound,
+        matches,
+        qualifiedCount: selectedRows.length,
+        totalCandidateCount: participants.length,
+    };
+}
+
+export function buildAutoQuarterDraw({ rankedPools, allTeams }) {
+    const draw = buildAutoFinalDraw({ rankedPools, allTeams, qualifierMode: 'top2' });
+    return draw?.entryRound === 'quarter' ? draw.matches : [];
 }

@@ -20,9 +20,12 @@ function createStageMatch(label = '') {
 export function createEmptyFinalStage() {
     return {
         settings: {
+            entryRound: 'quarter',
+            poolQualifierMode: 'top2',
             enableThirdPlaceMatch: false,
             enablePlacement5to8: false,
         },
+        roundOf16: Array.from({ length: 8 }, (_, index) => createStageMatch(`Huitième ${index + 1}`)),
         quarterFinals: [
             createStageMatch('Quart 1'),
             createStageMatch('Quart 2'),
@@ -46,6 +49,19 @@ export function createEmptyFinalStage() {
     };
 }
 
+function sanitizeEntryRound(value) {
+    return ['round16', 'quarter', 'semi'].includes(value) ? value : 'quarter';
+}
+
+function sanitizeQualifierMode(value) {
+    return ['winners', 'top2', 'best4', 'all'].includes(value) ? value : 'top2';
+}
+
+function ensureMatchCount(matches, count, labelPrefix) {
+    const source = Array.isArray(matches) ? matches : [];
+    return Array.from({ length: count }, (_, index) => sanitizeMatch(source[index], `${labelPrefix} ${index + 1}`));
+}
+
 function sanitizeMatch(match, fallbackLabel = '') {
     return {
         id: match?.id || uid(),
@@ -62,20 +78,17 @@ function sanitizeStage(stage) {
 
     return {
         settings: {
+            entryRound: sanitizeEntryRound(stage?.settings?.entryRound || empty.settings.entryRound),
+            poolQualifierMode: sanitizeQualifierMode(stage?.settings?.poolQualifierMode || empty.settings.poolQualifierMode),
             enableThirdPlaceMatch: Boolean(stage?.settings?.enableThirdPlaceMatch),
             enablePlacement5to8: Boolean(stage?.settings?.enablePlacement5to8),
         },
-        quarterFinals: (stage?.quarterFinals || empty.quarterFinals).map((match, index) =>
-            sanitizeMatch(match, `Quart ${index + 1}`)
-        ),
-        semiFinals: (stage?.semiFinals || empty.semiFinals).map((match, index) =>
-            sanitizeMatch(match, `Demi ${index + 1}`)
-        ),
+        roundOf16: ensureMatchCount(stage?.roundOf16 || empty.roundOf16, 8, 'Huitième'),
+        quarterFinals: ensureMatchCount(stage?.quarterFinals || empty.quarterFinals, 4, 'Quart'),
+        semiFinals: ensureMatchCount(stage?.semiFinals || empty.semiFinals, 2, 'Demi'),
         final: sanitizeMatch(stage?.final || empty.final, 'Finale'),
         thirdPlace: sanitizeMatch(stage?.thirdPlace || empty.thirdPlace, 'Petite finale'),
-        placement5to8Semis: (stage?.placement5to8Semis || empty.placement5to8Semis).map(
-            (match, index) => sanitizeMatch(match, `Place 5-8 / Demi ${index + 1}`)
-        ),
+        placement5to8Semis: ensureMatchCount(stage?.placement5to8Semis || empty.placement5to8Semis, 2, 'Place 5-8 / Demi'),
         placement5to8Finals: {
             place5: sanitizeMatch(
                 stage?.placement5to8Finals?.place5 || empty.placement5to8Finals.place5,
@@ -140,34 +153,48 @@ function clearScores(match) {
     };
 }
 
+function clearMatchTeamsAndScores(match) {
+    return clearScores({ ...match, teamAId: '', teamBId: '' });
+}
+
 export function setFinalStageOption(stage, optionKey, value) {
     const safeStage = sanitizeStage(stage);
+
+    const sanitizedValue =
+        optionKey === 'entryRound'
+            ? sanitizeEntryRound(value)
+            : optionKey === 'poolQualifierMode'
+                ? sanitizeQualifierMode(value)
+                : Boolean(value);
 
     return {
         ...safeStage,
         settings: {
             ...safeStage.settings,
-            [optionKey]: Boolean(value),
+            [optionKey]: sanitizedValue,
         },
     };
 }
 
-export function assignQuarterTeam(stage, matchIndex, field, teamId) {
+export function assignStageTeam(stage, stageKey, matchIndex, field, teamId) {
     const safeStage = sanitizeStage(stage);
-
-    const quarterFinals = safeStage.quarterFinals.map((match, index) =>
-        index === matchIndex
-            ? clearScores({
-                ...match,
-                [field]: teamId || '',
-            })
-            : match
-    );
+    const targetKey = stageKey === 'roundOf16' || stageKey === 'semiFinals' ? stageKey : 'quarterFinals';
 
     return {
         ...safeStage,
-        quarterFinals,
+        [targetKey]: safeStage[targetKey].map((match, index) =>
+            index === matchIndex
+                ? clearScores({
+                    ...match,
+                    [field]: teamId || '',
+                })
+                : match
+        ),
     };
+}
+
+export function assignQuarterTeam(stage, matchIndex, field, teamId) {
+    return assignStageTeam(stage, 'quarterFinals', matchIndex, field, teamId);
 }
 
 export function updateFinalStageMatch(stage, stageKey, matchIndex, field, value) {
@@ -220,8 +247,19 @@ export function updateFinalStageMatch(stage, stageKey, matchIndex, field, value)
     };
 }
 
+function syncRoundPairs(targetMatches, previousMatches, winnerIds) {
+    return targetMatches.map((match, index) =>
+        preserveScoresIfSameTeams(
+            previousMatches[index] || match,
+            winnerIds[index * 2] || '',
+            winnerIds[index * 2 + 1] || ''
+        )
+    );
+}
+
 export function syncFinalStageWithTeams(stage, allTeams = []) {
     const safeStage = sanitizeStage(stage);
+    const entryRound = safeStage.settings.entryRound;
     const validTeamIds = new Set((allTeams || []).map((team) => team.id));
 
     const keepValidTeams = (match) => ({
@@ -230,25 +268,22 @@ export function syncFinalStageWithTeams(stage, allTeams = []) {
         teamBId: validTeamIds.has(match.teamBId) ? match.teamBId : '',
     });
 
-    const quarterFinals = safeStage.quarterFinals.map(keepValidTeams);
+    const roundOf16 = safeStage.roundOf16.map(keepValidTeams);
+    let quarterFinals = safeStage.quarterFinals.map(keepValidTeams);
+    let semiFinals = safeStage.semiFinals.map(keepValidTeams);
 
-    const qfWinners = quarterFinals.map(getWinnerTeamId);
-    const qfLosers = quarterFinals.map(getLoserTeamId);
+    if (entryRound === 'round16') {
+        quarterFinals = syncRoundPairs(quarterFinals, safeStage.quarterFinals.map(keepValidTeams), roundOf16.map(getWinnerTeamId));
+    } else if (entryRound === 'semi') {
+        quarterFinals = quarterFinals.map(clearMatchTeamsAndScores);
+    }
 
-    const nextSemiFinals = safeStage.semiFinals.map(keepValidTeams);
-    nextSemiFinals[0] = preserveScoresIfSameTeams(
-        nextSemiFinals[0],
-        qfWinners[0] || '',
-        qfWinners[1] || ''
-    );
-    nextSemiFinals[1] = preserveScoresIfSameTeams(
-        nextSemiFinals[1],
-        qfWinners[2] || '',
-        qfWinners[3] || ''
-    );
+    if (entryRound === 'round16' || entryRound === 'quarter') {
+        semiFinals = syncRoundPairs(semiFinals, safeStage.semiFinals.map(keepValidTeams), quarterFinals.map(getWinnerTeamId));
+    }
 
-    const sfWinners = nextSemiFinals.map(getWinnerTeamId);
-    const sfLosers = nextSemiFinals.map(getLoserTeamId);
+    const sfWinners = semiFinals.map(getWinnerTeamId);
+    const sfLosers = semiFinals.map(getLoserTeamId);
 
     const nextFinal = preserveScoresIfSameTeams(
         keepValidTeams(safeStage.final),
@@ -264,11 +299,7 @@ export function syncFinalStageWithTeams(stage, allTeams = []) {
             sfLosers[1] || ''
         );
     } else {
-        nextThirdPlace = clearScores({
-            ...nextThirdPlace,
-            teamAId: '',
-            teamBId: '',
-        });
+        nextThirdPlace = clearMatchTeamsAndScores(nextThirdPlace);
     }
 
     let placement5to8Semis = safeStage.placement5to8Semis.map(keepValidTeams);
@@ -277,17 +308,11 @@ export function syncFinalStageWithTeams(stage, allTeams = []) {
         place7: keepValidTeams(safeStage.placement5to8Finals.place7),
     };
 
-    if (safeStage.settings.enablePlacement5to8) {
-        placement5to8Semis[0] = preserveScoresIfSameTeams(
-            placement5to8Semis[0],
-            qfLosers[0] || '',
-            qfLosers[1] || ''
-        );
-        placement5to8Semis[1] = preserveScoresIfSameTeams(
-            placement5to8Semis[1],
-            qfLosers[2] || '',
-            qfLosers[3] || ''
-        );
+    const qfLosers = quarterFinals.map(getLoserTeamId);
+    const canUsePlacement5to8 = safeStage.settings.enablePlacement5to8 && entryRound !== 'semi';
+
+    if (canUsePlacement5to8) {
+        placement5to8Semis = syncRoundPairs(placement5to8Semis, placement5to8Semis, qfLosers);
 
         const placementSemiWinners = placement5to8Semis.map(getWinnerTeamId);
         const placementSemiLosers = placement5to8Semis.map(getLoserTeamId);
@@ -304,32 +329,18 @@ export function syncFinalStageWithTeams(stage, allTeams = []) {
             placementSemiLosers[1] || ''
         );
     } else {
-        placement5to8Semis = placement5to8Semis.map((match) =>
-            clearScores({
-                ...match,
-                teamAId: '',
-                teamBId: '',
-            })
-        );
-
+        placement5to8Semis = placement5to8Semis.map(clearMatchTeamsAndScores);
         placement5to8Finals = {
-            place5: clearScores({
-                ...placement5to8Finals.place5,
-                teamAId: '',
-                teamBId: '',
-            }),
-            place7: clearScores({
-                ...placement5to8Finals.place7,
-                teamAId: '',
-                teamBId: '',
-            }),
+            place5: clearMatchTeamsAndScores(placement5to8Finals.place5),
+            place7: clearMatchTeamsAndScores(placement5to8Finals.place7),
         };
     }
 
     return {
         ...safeStage,
+        roundOf16,
         quarterFinals,
-        semiFinals: nextSemiFinals,
+        semiFinals,
         final: nextFinal,
         thirdPlace: nextThirdPlace,
         placement5to8Semis,
@@ -337,7 +348,25 @@ export function syncFinalStageWithTeams(stage, allTeams = []) {
     };
 }
 
+export function getFinalStageMatchesForStats(stage) {
+    const safeStage = sanitizeStage(stage);
+    const entryRound = safeStage.settings.entryRound;
+
+    return [
+        ...(entryRound === 'round16' ? safeStage.roundOf16 : []),
+        ...(entryRound === 'round16' || entryRound === 'quarter' ? safeStage.quarterFinals : []),
+        ...safeStage.semiFinals,
+        ...(safeStage.settings.enableThirdPlaceMatch ? [safeStage.thirdPlace] : []),
+        ...(safeStage.settings.enablePlacement5to8 && entryRound !== 'semi' ? safeStage.placement5to8Semis : []),
+        ...(safeStage.settings.enablePlacement5to8 && entryRound !== 'semi'
+            ? [safeStage?.placement5to8Finals?.place5, safeStage?.placement5to8Finals?.place7]
+            : []),
+        safeStage.final,
+    ].filter(Boolean);
+}
+
 function buildStageStatMap(allTeams, stage) {
+    const safeStage = sanitizeStage(stage);
     const statMap = new Map(
         (allTeams || []).map((team) => [
             team.id,
@@ -356,18 +385,7 @@ function buildStageStatMap(allTeams, stage) {
         ])
     );
 
-    const allMatches = [
-        ...(stage?.quarterFinals || []),
-        ...(stage?.semiFinals || []),
-        ...(stage?.settings?.enableThirdPlaceMatch ? [stage.thirdPlace] : []),
-        ...(stage?.settings?.enablePlacement5to8 ? stage.placement5to8Semis || [] : []),
-        ...(stage?.settings?.enablePlacement5to8
-            ? [stage?.placement5to8Finals?.place5, stage?.placement5to8Finals?.place7]
-            : []),
-        stage?.final,
-    ].filter(Boolean);
-
-    allMatches.forEach((match) => {
+    getFinalStageMatchesForStats(safeStage).forEach((match) => {
         const scoreA = Number(match.scoreA);
         const scoreB = Number(match.scoreB);
 
@@ -499,8 +517,20 @@ function sortRemainingPoolTeams(a, b) {
     return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
 }
 
+function pushSortedLosers({ ranking, seen, losers, startPosition, teamMap, statMap, poolStatMap }) {
+    let position = startPosition;
+    [...losers].sort(sortByStageTieBreak).forEach((team) => {
+        if (!team?.teamId || seen.has(team.teamId)) return;
+        seen.add(team.teamId);
+        ranking.push(buildRankingRow(team.teamId, position, teamMap, statMap, poolStatMap));
+        position += 1;
+    });
+    return position;
+}
+
 export function buildFinalRanking(stage, rankedPools = [], allTeams = []) {
     const safeStage = sanitizeStage(stage);
+    const entryRound = safeStage.settings.entryRound;
     const statMap = buildStageStatMap(allTeams, safeStage);
     const poolStatMap = buildPoolStatMap(rankedPools);
     const teamMap = new Map((allTeams || []).map((team) => [team.id, team]));
@@ -533,19 +563,41 @@ export function buildFinalRanking(stage, rankedPools = [], allTeams = []) {
         pushRankedTeam(4, sortedSemiLosers[1]?.teamId);
     }
 
-    const qfLosers = safeStage.quarterFinals.map(getLoserTeamId).filter(Boolean).map(makeComparableRow);
+    let nextPosition = 5;
 
-    if (safeStage.settings.enablePlacement5to8) {
-        pushRankedTeam(5, getWinnerTeamId(safeStage.placement5to8Finals.place5));
-        pushRankedTeam(6, getLoserTeamId(safeStage.placement5to8Finals.place5));
-        pushRankedTeam(7, getWinnerTeamId(safeStage.placement5to8Finals.place7));
-        pushRankedTeam(8, getLoserTeamId(safeStage.placement5to8Finals.place7));
-    } else {
-        const sortedQfLosers = [...qfLosers].sort(sortByStageTieBreak);
-        pushRankedTeam(5, sortedQfLosers[0]?.teamId);
-        pushRankedTeam(6, sortedQfLosers[1]?.teamId);
-        pushRankedTeam(7, sortedQfLosers[2]?.teamId);
-        pushRankedTeam(8, sortedQfLosers[3]?.teamId);
+    if (entryRound !== 'semi') {
+        const qfLosers = safeStage.quarterFinals.map(getLoserTeamId).filter(Boolean).map(makeComparableRow);
+
+        if (safeStage.settings.enablePlacement5to8) {
+            pushRankedTeam(5, getWinnerTeamId(safeStage.placement5to8Finals.place5));
+            pushRankedTeam(6, getLoserTeamId(safeStage.placement5to8Finals.place5));
+            pushRankedTeam(7, getWinnerTeamId(safeStage.placement5to8Finals.place7));
+            pushRankedTeam(8, getLoserTeamId(safeStage.placement5to8Finals.place7));
+            nextPosition = 9;
+        } else {
+            nextPosition = pushSortedLosers({
+                ranking,
+                seen,
+                losers: qfLosers,
+                startPosition: 5,
+                teamMap,
+                statMap,
+                poolStatMap,
+            });
+        }
+    }
+
+    if (entryRound === 'round16') {
+        const r16Losers = safeStage.roundOf16.map(getLoserTeamId).filter(Boolean).map(makeComparableRow);
+        nextPosition = pushSortedLosers({
+            ranking,
+            seen,
+            losers: r16Losers,
+            startPosition: Math.max(nextPosition, ranking.length + 1),
+            teamMap,
+            statMap,
+            poolStatMap,
+        });
     }
 
     const remainingPoolTeams = [];
@@ -557,7 +609,7 @@ export function buildFinalRanking(stage, rankedPools = [], allTeams = []) {
 
     remainingPoolTeams.sort(sortRemainingPoolTeams);
 
-    let nextPosition = ranking.length + 1;
+    nextPosition = Math.max(nextPosition, ranking.length + 1);
     remainingPoolTeams.forEach((team) => {
         if (seen.has(team.teamId)) return;
         seen.add(team.teamId);
