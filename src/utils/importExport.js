@@ -85,6 +85,37 @@ function findValue(row, aliases) {
     return '';
 }
 
+function findFirstFilledValue(row, aliasGroups) {
+    for (const aliases of aliasGroups) {
+        const value = findValue(row, aliases);
+        if (normalizeText(value) !== '') {
+            return value;
+        }
+    }
+    return '';
+}
+
+function parseRankValue(value) {
+    if (value === null || value === undefined) return 0;
+
+    const normalized = String(value)
+        .replace(/\s/g, '')
+        .replace(',', '.')
+        .trim();
+
+    if (!normalized) return 0;
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getEffectiveRank(rawRank, rawAdjustmentRank) {
+    const rank = parseRankValue(rawRank);
+    const adjustmentRank = parseRankValue(rawAdjustmentRank);
+
+    return adjustmentRank > 0 ? adjustmentRank : rank;
+}
+
 function parseParticipantsRows(rows) {
     const grouped = {};
 
@@ -92,16 +123,19 @@ function parseParticipantsRows(rows) {
         const rawTeam = findValue(row, ['equipe']) || findValue(row, ['team']) || '';
         const rawSlot = findValue(row, ['joueur']) || findValue(row, ['player']) || '';
         const rawName = findValue(row, ['nom']) || findValue(row, ['name']) || '';
-        const rawRank =
-            findValue(row, ['rang']) ||
-            findValue(row, ['rank']) ||
-            findValue(row, ['rang combine']) ||
-            '';
+        const rawRank = findFirstFilledValue(row, [['rang'], ['rank'], ['rang combine']]);
+        const rawAdjustmentRank = findFirstFilledValue(row, [
+            ['ajust'],
+            ['ajust.'],
+            ['ajustement'],
+            ['adjust'],
+            ['adjustment'],
+        ]);
 
         const teamName = normalizeText(rawTeam);
         const slot = normalizeText(rawSlot);
         const playerName = normalizeText(rawName);
-        const rank = Number(rawRank) || 0;
+        const rank = getEffectiveRank(rawRank, rawAdjustmentRank);
 
         if (!teamName || !playerName) return;
 
