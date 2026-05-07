@@ -30,7 +30,7 @@ function sanitizeSaveName(name) {
 
 export function buildTournamentSnapshot(state) {
     return {
-        app: 'Matrice Padel',
+        app: 'Padelingo',
         type: 'tournament-backup',
         version: EXPORT_VERSION,
         exportedAt: new Date().toISOString(),
@@ -56,7 +56,7 @@ export async function importTournamentJsonFile(file) {
     const rawState = parsed?.state || parsed;
 
     if (!rawState || !Array.isArray(rawState.pools)) {
-        throw new Error('Le fichier JSON ne ressemble pas à une sauvegarde Matrice Padel.');
+        throw new Error('Le fichier JSON ne ressemble pas à une sauvegarde Padelingo.');
     }
 
     return normalizeAppState(rawState);

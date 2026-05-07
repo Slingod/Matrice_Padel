@@ -13,7 +13,7 @@ const LEGAL_CONTENT = {
     terms: {
         title: 'Conditions générales d’utilisation',
         body: [
-            "L’application Matrice Padel aide à organiser des tournois de padel : équipes, poules, planning, scores, phases finales et classements.",
+            "L’application Padelingo aide à organiser des tournois de padel : équipes, poules, planning, scores, phases finales et classements.",
             "L’utilisateur reste responsable de la vérification des résultats, des classements et de l’organisation réelle du tournoi.",
             "Les sauvegardes locales et exports JSON sont fournis pour éviter les pertes de données, mais il est conseillé d’exporter régulièrement une sauvegarde pendant un tournoi important.",
         ],
@@ -34,7 +34,7 @@ function LegalFooter() {
         <>
             <footer className="legal-footer">
                 <div>
-                    <strong>Matrice Padel</strong>
+                    <strong>Padelingo</strong>
                     <span>Outil de gestion de tournoi · sauvegarde locale sans cookie publicitaire.</span>
                 </div>
 

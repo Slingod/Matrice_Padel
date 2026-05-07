@@ -1,4 +1,4 @@
-# Matrice PADEL
+# Padelingo
 
 Application web de gestion de tournoi PADEL, pensée pour faciliter l’organisation des **poules**, le **suivi des matchs**, le **classement automatique**, la **phase finale**, ainsi que l’**import/export de données**.
 
@@ -8,7 +8,7 @@ L’objectif du projet est de proposer une interface simple, rapide et exploitab
 
 ## Aperçu
 
-Matrice PADEL permet de :
+Padelingo permet de :
 
 - gérer plusieurs **poules**
 - organiser un **serpentin**

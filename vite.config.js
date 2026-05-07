@@ -26,8 +26,8 @@ export default defineConfig(({ command }) => ({
       ],
 
       manifest: {
-        name: 'Matrice PADEL',
-        short_name: 'MatricePadel',
+        name: 'Padelingo',
+        short_name: 'Padelingo',
         description: 'Gestion des poules, matchs et phase finale pour tournoi de padel',
         theme_color: '#0f172a',
         background_color: '#0f172a',
