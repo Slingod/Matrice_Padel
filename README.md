@@ -131,7 +131,7 @@ Pour chaque équipe :
 ## Structure du projet
 
 ```bash
-Matrice_Padel/
+Padelingo/
 ├── public/
 ├── src/
 │   ├── utils/

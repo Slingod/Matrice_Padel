@@ -1,4 +1,5 @@
 import './index.css';
+import { Route, Routes } from 'react-router-dom';
 import Base from './components/Base.jsx';
 import Serpentin from './components/Serpentin.jsx';
 import Planning from './components/Planning.jsx';
@@ -9,9 +10,11 @@ import SavedTournaments from './components/SavedTournaments.jsx';
 import AppHeader from './components/layout/AppHeader.jsx';
 import AppToolbar from './components/layout/AppToolbar.jsx';
 import LegalFooter from './components/layout/LegalFooter.jsx';
+import ShareTournamentPanel from './components/live/ShareTournamentPanel.jsx';
+import LiveTournamentPage from './pages/LiveTournamentPage.jsx';
 import { useTournamentState } from './hooks/useTournamentState';
 
-function App() {
+function MainPadelingoApp() {
     const ctx = useTournamentState();
     const { activeTab } = ctx;
 
@@ -19,6 +22,8 @@ function App() {
         <div className="app">
             <AppHeader />
             <AppToolbar ctx={ctx} />
+
+            <ShareTournamentPanel ctx={ctx} />
 
             {activeTab === 'base' ? (
                 <Base ctx={ctx} />
@@ -38,6 +43,15 @@ function App() {
 
             <LegalFooter />
         </div>
+    );
+}
+
+function App() {
+    return (
+        <Routes>
+            <Route path="/live/:publicId" element={<LiveTournamentPage />} />
+            <Route path="*" element={<MainPadelingoApp />} />
+        </Routes>
     );
 }
 
