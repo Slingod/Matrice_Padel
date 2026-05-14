@@ -11,6 +11,7 @@ import AppHeader from './components/layout/AppHeader.jsx';
 import AppToolbar from './components/layout/AppToolbar.jsx';
 import LegalFooter from './components/layout/LegalFooter.jsx';
 import ShareTournamentPanel from './components/live/ShareTournamentPanel.jsx';
+import MatchFormatSelector from './components/MatchFormatSelector.jsx';
 import LiveTournamentPage from './pages/LiveTournamentPage.jsx';
 import { useTournamentState } from './hooks/useTournamentState';
 
@@ -23,6 +24,7 @@ function MainPadelingoApp() {
             <AppHeader />
             <AppToolbar ctx={ctx} />
 
+            <MatchFormatSelector />
             <ShareTournamentPanel ctx={ctx} />
 
             {activeTab === 'base' ? (

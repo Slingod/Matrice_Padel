@@ -6,6 +6,85 @@ import {
 } from '../services/liveTournamentService';
 import { computeRanking } from '../utils/tournament';
 
+function isFilled(value) {
+    return value !== '' && value !== null && value !== undefined;
+}
+
+function getRequiredSets(formatKey, sets = []) {
+    if (formatKey === 'D1' || formatKey === 'D2' || formatKey === 'E') return 1;
+    if (sets.length <= 1) return 1;
+    return 2;
+}
+
+function computeScoreFromSets(sets = [], formatKey = 'D1') {
+    const requiredSets = getRequiredSets(formatKey, sets);
+    let wonA = 0;
+    let wonB = 0;
+
+    for (const set of sets) {
+        if (!isFilled(set?.scoreA) || !isFilled(set?.scoreB)) continue;
+
+        const scoreA = Number(set.scoreA);
+        const scoreB = Number(set.scoreB);
+
+        if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB) || scoreA === scoreB) continue;
+
+        if (scoreA > scoreB) {
+            wonA += 1;
+        } else {
+            wonB += 1;
+        }
+
+        if (wonA >= requiredSets || wonB >= requiredSets) {
+            break;
+        }
+    }
+
+    const isComplete = wonA >= requiredSets || wonB >= requiredSets;
+
+    return {
+        scoreA: isComplete ? String(wonA) : '',
+        scoreB: isComplete ? String(wonB) : '',
+    };
+}
+
+function getNormalizedMatchScore(match = {}) {
+    if (isFilled(match.scoreA) && isFilled(match.scoreB)) {
+        return {
+            scoreA: match.scoreA,
+            scoreB: match.scoreB,
+        };
+    }
+
+    const detail = match.scoreDetail || {};
+
+    if (isFilled(detail.scoreA) && isFilled(detail.scoreB)) {
+        return {
+            scoreA: detail.scoreA,
+            scoreB: detail.scoreB,
+        };
+    }
+
+    if (Array.isArray(detail.sets)) {
+        return computeScoreFromSets(detail.sets, detail.formatKey || match.formatKey || match.matchFormatKey || 'D1');
+    }
+
+    return {
+        scoreA: '',
+        scoreB: '',
+    };
+}
+
+function normalizeMatchForLive(match = {}) {
+    const normalizedScore = getNormalizedMatchScore(match);
+
+    return {
+        ...match,
+        scoreA: normalizedScore.scoreA,
+        scoreB: normalizedScore.scoreB,
+    };
+}
+
 function getTeamNameById(state, teamId) {
     const allTeams = state?.baseTeams || [];
     const team = allTeams.find((item) => item.id === teamId);
@@ -24,9 +103,32 @@ function formatScore(value) {
     return value === '' || value === null || value === undefined ? '-' : value;
 }
 
+function formatSetsDetail(match = {}) {
+    const sets = match?.scoreDetail?.sets;
+
+    if (!Array.isArray(sets) || sets.length === 0) {
+        return '-';
+    }
+
+    const parts = sets
+        .map((set) => {
+            const hasA = isFilled(set?.scoreA);
+            const hasB = isFilled(set?.scoreB);
+
+            if (!hasA && !hasB) return null;
+
+            return `${formatScore(set?.scoreA)}-${formatScore(set?.scoreB)}`;
+        })
+        .filter(Boolean);
+
+    return parts.length > 0 ? parts.join(' / ') : '-';
+}
+
 function LiveMatchRow({ state, match, label }) {
-    const scoreA = formatScore(match.scoreA);
-    const scoreB = formatScore(match.scoreB);
+    const normalizedMatch = normalizeMatchForLive(match);
+    const scoreA = formatScore(normalizedMatch.scoreA);
+    const scoreB = formatScore(normalizedMatch.scoreB);
+    const setsDetail = formatSetsDetail(match);
 
     return (
         <tr>
@@ -34,21 +136,30 @@ function LiveMatchRow({ state, match, label }) {
             <td>{getTeamNameById(state, match.teamAId)}</td>
             <td className="live-score">{scoreA}</td>
             <td className="live-score">{scoreB}</td>
+            <td className="live-sets-detail">{setsDetail}</td>
             <td>{getTeamNameById(state, match.teamBId)}</td>
         </tr>
     );
 }
 
 function PoolLiveBlock({ state, pool }) {
+    const normalizedMatches = useMemo(() => {
+        return (pool.matches || []).map(normalizeMatchForLive);
+    }, [pool.matches]);
+
     const ranking = useMemo(() => {
-        return computeRanking(pool.teams || [], pool.matches || []);
-    }, [pool]);
+        return computeRanking(pool.teams || [], normalizedMatches);
+    }, [pool.teams, normalizedMatches]);
 
     return (
         <section className="card full-width live-section">
             <h2>{pool.name}</h2>
 
             <h3>Matchs</h3>
+            <p className="note">
+                Le score affiché correspond aux sets gagnés. Le détail affiche les jeux/points saisis par set.
+            </p>
+
             <div className="table-wrapper">
                 <table>
                     <thead>
@@ -57,16 +168,17 @@ function PoolLiveBlock({ state, pool }) {
                         <th>Équipe 1</th>
                         <th>Score</th>
                         <th>Score</th>
+                        <th>Détail sets</th>
                         <th>Équipe 2</th>
                     </tr>
                     </thead>
                     <tbody>
-                    {(pool.matches || []).length === 0 ? (
+                    {normalizedMatches.length === 0 ? (
                         <tr>
-                            <td colSpan="5">Aucun match pour le moment.</td>
+                            <td colSpan="6">Aucun match pour le moment.</td>
                         </tr>
                     ) : (
-                        [...pool.matches]
+                        [...normalizedMatches]
                             .sort((a, b) => {
                                 if ((a.round || 0) !== (b.round || 0)) return (a.round || 0) - (b.round || 0);
                                 return (a.localCourt || 0) - (b.localCourt || 0);
@@ -183,20 +295,21 @@ function FinalStageLiveBlock({ state }) {
                         <th>Équipe 1</th>
                         <th>Score</th>
                         <th>Score</th>
+                        <th>Détail sets</th>
                         <th>Équipe 2</th>
                     </tr>
                     </thead>
                     <tbody>
                     {rows.length === 0 ? (
                         <tr>
-                            <td colSpan="5">Phase finale non disponible pour le moment.</td>
+                            <td colSpan="6">Phase finale non disponible pour le moment.</td>
                         </tr>
                     ) : (
                         rows.map((row, index) => (
                             <LiveMatchRow
                                 key={`${row.label}-${index}`}
                                 state={state}
-                                match={row.match}
+                                match={normalizeMatchForLive(row.match)}
                                 label={row.label}
                             />
                         ))

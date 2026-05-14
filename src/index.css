@@ -1221,3 +1221,167 @@ tbody td select {
     max-width: 240px;
   }
 }
+
+/* Formats officiels A1 à E */
+.match-format-card {
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(250, 204, 21, 0.22);
+}
+
+.match-format-head {
+  align-items: center;
+}
+
+.match-format-field {
+  min-width: min(100%, 360px);
+}
+
+.match-format-description {
+  margin-bottom: 0;
+}
+
+.match-score-editor {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 260px;
+}
+
+.match-score-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.match-score-editor-head strong {
+  color: #facc15;
+}
+
+.match-sets-grid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.match-set-row {
+  display: grid;
+  grid-template-columns: 72px 64px 64px;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.match-set-row span {
+  color: #cbd5e1;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.match-set-row input {
+  min-width: 0;
+  width: 64px;
+  text-align: center;
+  padding: 0.55rem 0.45rem;
+}
+
+.match-score-editor small {
+  color: #cbd5e1;
+}
+
+@media (max-width: 800px) {
+  .match-set-row {
+    grid-template-columns: 1fr 64px 64px;
+  }
+}
+
+.final-format-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.final-format-card .final-settings-help {
+  margin: 0;
+}
+
+.bracket-match .match-score-editor {
+  margin-top: 0.75rem;
+}
+
+.bracket-match .match-score-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bracket-match .match-format-badge {
+  color: #facc15;
+  font-weight: 900;
+}
+
+.bracket-match .match-sets-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.bracket-match .match-set-row {
+  display: grid;
+  grid-template-columns: 90px 76px 76px;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.bracket-match .match-set-row input {
+  text-align: center;
+  padding: 0.6rem 0.5rem;
+}
+
+.bracket-match .match-format-help,
+.bracket-match .match-format-lock-note {
+  color: #cbd5e1;
+  font-size: 0.88rem;
+}
+
+/* Correctif affichage Format du tableau final */
+
+.final-settings-grid {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  align-items: start;
+}
+
+.final-settings-grid > .field,
+.final-settings-grid > .final-format-card {
+  min-width: 0;
+}
+
+.final-format-card {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.final-format-card .field {
+  margin: 0;
+}
+
+.final-format-card .final-settings-help {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.final-settings-grid > .final-settings-help {
+  grid-column: 1 / -1;
+  margin-top: 0.15rem;
+}
+
+@media (max-width: 1050px) {
+  .final-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .final-settings-grid > .final-settings-help {
+    grid-column: auto;
+  }
+}

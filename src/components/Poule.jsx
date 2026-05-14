@@ -1,5 +1,6 @@
 import { FaCog } from 'react-icons/fa';
 import { getWinner } from '../utils/tournament';
+import MatchScoreEditor from './MatchScoreEditor.jsx';
 
 function sortMatchesForDisplay(matches) {
     return [...(matches || [])].sort((a, b) => {
@@ -11,64 +12,15 @@ function sortMatchesForDisplay(matches) {
 function Poule({ ctx }) {
     const {
         activePool,
-        activeTab,
-        allTeams,
-        baseTeams,
-        combinedPointsRanking,
-        courtCount,
-        courtLabels,
-        displayBaseTeams,
         displayCourtLabel,
         displayMatchCourtLabel,
-        editingBaseDraft,
-        editingBaseTeamId,
         editingMatchCourtId,
-        finalOnlyPointsRanking,
-        finalOptionGroups,
-        finalRanking,
         formatRank,
-        formatSigned,
-        getDisplayTeamNumber,
-        getTeamLabelById,
         getTeamNameById,
-        globalPlanning,
-        handleAddManualBaseTeam,
-        handleAddSerpentinRow,
-        handleAutoFillSerpentin,
-        handleAutoQuarterDraw,
-        handleBaseDraftChange,
-        handleCancelBaseEdit,
-        handleChangeSerpentinValue,
-        handleDeleteBaseTeam,
-        handleDeletePool,
-        handleDeleteSerpentinRow,
-        handleFinalMatchScore,
         handleMatchCourtOverrideChange,
         handleMatchScoreChange,
-        handleNewBaseDraftChange,
-        handleQuarterTeamChange,
-        handleSaveBaseEdit,
-        handleSerpentinDragEnd,
-        handleStartBaseEdit,
-        handleSwapPlayersInDraft,
-        handleToggleQuarterPlacement,
-        handleToggleSeedTeam,
-        handleToggleThirdPlace,
-        newBaseDraft,
-        playableTeams,
-        pools,
-        rankedPools,
         ranking,
-        safeFinalStage,
-        seedTeamIds,
-        seedTeamNumberById,
-        seedTeams,
-        selectedQuarterTeamIds,
-        selectedSerpentinTeamIds,
-        sensors,
-        serpentin,
         setEditingMatchCourtId,
-
     } = ctx;
 
     function resetMatchCourtOverride(matchId) {
@@ -76,11 +28,22 @@ function Poule({ ctx }) {
         setEditingMatchCourtId(null);
     }
 
+    if (!activePool) {
+        return (
+            <main className="layout">
+                <section className="card full-width">
+                    <h2>Aucune poule sélectionnée</h2>
+                    <p className="empty-text">Sélectionne ou crée une poule pour afficher les matchs.</p>
+                </section>
+            </main>
+        );
+    }
+
     return (
         <main className="layout">
             <section className="card">
-                <h2>{activePool?.name} — Équipes</h2>
-                {activePool?.teams.length === 0 ? (
+                <h2>{activePool.name} — Équipes</h2>
+                {activePool.teams.length === 0 ? (
                     <p className="empty-text">Aucune équipe placée dans cette poule via le serpentin.</p>
                 ) : (
                     <div className="team-list">
@@ -89,11 +52,11 @@ function Poule({ ctx }) {
                                 <div className="team-main">
                                     <span className="team-index">{index + 1}.</span>
                                     <span className="team-name">
-            {team.name}
+                                        {team.name}
                                         {team.cumulativeRank
                                             ? ` — Rang cumulé: ${formatRank(team.cumulativeRank)}`
                                             : ''}
-          </span>
+                                    </span>
                                 </div>
                             </div>
                         ))}
@@ -102,8 +65,13 @@ function Poule({ ctx }) {
             </section>
 
             <section className="card">
-                <h2>{activePool?.name} — Matchs</h2>
-                {activePool?.matches.length === 0 ? (
+                <h2>{activePool.name} — Matchs</h2>
+                <p className="note">
+                    Les formats A1 à E sont pris en charge. Le score global du match est calculé automatiquement
+                    en sets gagnés : 2-0, 2-1, 1-2, etc.
+                </p>
+
+                {activePool.matches.length === 0 ? (
                     <p className="empty-text">
                         Place au moins 2 équipes dans le serpentin pour générer des matchs.
                     </p>
@@ -115,8 +83,7 @@ function Poule({ ctx }) {
                                 <th>Rotation</th>
                                 <th>Équipe 1</th>
                                 <th>Terrain</th>
-                                <th>Score 1</th>
-                                <th>Score 2</th>
+                                <th>Score / Sets</th>
                                 <th>Équipe 2</th>
                                 <th>Diff 1</th>
                                 <th>Diff 2</th>
@@ -195,24 +162,12 @@ function Poule({ ctx }) {
                                                 </div>
                                             )}
                                         </td>
-
                                         <td>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={match.scoreA}
-                                                onChange={(event) =>
-                                                    handleMatchScoreChange(match.id, 'scoreA', event.target.value)
-                                                }
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={match.scoreB}
-                                                onChange={(event) =>
-                                                    handleMatchScoreChange(match.id, 'scoreB', event.target.value)
+                                            <MatchScoreEditor
+                                                match={match}
+                                                globalFormatKey={ctx.matchFormatKey || 'D1'}
+                                                onScoreChange={(field, value, scoreDetail) =>
+                                                    handleMatchScoreChange(match.id, field, value, scoreDetail)
                                                 }
                                             />
                                         </td>
@@ -231,7 +186,7 @@ function Poule({ ctx }) {
             </section>
 
             <section className="card full-width">
-                <h2>{activePool?.name} — Classement</h2>
+                <h2>{activePool.name} — Classement</h2>
                 <div className="table-wrapper">
                     <table>
                         <thead>

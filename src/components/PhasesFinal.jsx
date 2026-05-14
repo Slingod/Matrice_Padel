@@ -1,5 +1,6 @@
 import { FaRandom } from 'react-icons/fa';
 import FinalMatchCard from './FinalMatchCard.jsx';
+import FinalMatchFormatSelector from './FinalMatchFormatSelector.jsx';
 
 const ENTRY_ROUND_LABELS = {
     round16: 'Huitièmes de finale',
@@ -14,9 +15,57 @@ const QUALIFIER_MODE_LABELS = {
     all: 'Toutes les équipes classées',
 };
 
+function RankingTable({ title, rows, formatRank }) {
+    return (
+        <div className="card planning-card">
+            <h2>{title}</h2>
+
+            <div className="table-wrapper">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Équipe</th>
+                        <th>Rang cumulé</th>
+                        <th>J</th>
+                        <th>V</th>
+                        <th>D</th>
+                        <th>PF</th>
+                        <th>PA</th>
+                        <th>Diff</th>
+                        <th>Total</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {(rows || []).length === 0 ? (
+                        <tr>
+                            <td colSpan="10">Aucune donnée disponible pour le moment.</td>
+                        </tr>
+                    ) : (
+                        rows.map((team, index) => (
+                            <tr key={`${title}-${team.teamId || index}`}>
+                                <td>{team.position || index + 1}</td>
+                                <td>{team.teamName}</td>
+                                <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
+                                <td>{team.played || team.finalPlayed || 0}</td>
+                                <td>{team.wins || team.finalWins || 0}</td>
+                                <td>{team.losses || team.finalLosses || 0}</td>
+                                <td>{team.pointsFor || team.finalPointsFor || 0}</td>
+                                <td>{team.pointsAgainst || team.finalPointsAgainst || 0}</td>
+                                <td>{(team.diff || team.finalDiff || 0) > 0 ? `+${team.diff || team.finalDiff}` : team.diff || team.finalDiff || 0}</td>
+                                <td>{(team.totalScore || team.finalTotal || 0) > 0 ? `+${team.totalScore || team.finalTotal}` : team.totalScore || team.finalTotal || 0}</td>
+                            </tr>
+                        ))
+                    )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
 function PhasesFinal({ ctx }) {
     const {
-        allTeams,
         combinedPointsRanking,
         finalOnlyPointsRanking,
         finalOptionGroups,
@@ -24,6 +73,7 @@ function PhasesFinal({ ctx }) {
         getTeamLabelById,
         getTeamNameById,
         handleAutoQuarterDraw,
+        handleFinalMatchFormatChange,
         handleFinalMatchScore,
         handleFinalQualifierModeChange,
         handleFinalStageEntryRoundChange,
@@ -38,26 +88,33 @@ function PhasesFinal({ ctx }) {
 
     const entryRound = safeFinalStage.settings.entryRound || 'quarter';
     const qualifierMode = safeFinalStage.settings.poolQualifierMode || 'top2';
+    const finalMatchFormatKey =
+        safeFinalStage.settings.finalMatchFormatKey ||
+        safeFinalStage.settings.matchFormatKey ||
+        'D1';
+
     const showRoundOf16 = entryRound === 'round16';
     const showQuarterFinals = entryRound === 'round16' || entryRound === 'quarter';
-    const firstEditableStageKey = showRoundOf16 ? 'roundOf16' : entryRound === 'semi' ? 'semiFinals' : 'quarterFinals';
-    const firstEditableIds = firstEditableStageKey === 'quarterFinals' ? selectedQuarterTeamIds : selectedStarterTeamIds;
-    const gridColumns = showRoundOf16 ? '1.25fr 1fr 1fr 1fr' : showQuarterFinals ? '1.2fr 1fr 1fr' : '1.1fr 1fr';
+    const firstEditableStageKey = showRoundOf16
+        ? 'roundOf16'
+        : entryRound === 'semi'
+            ? 'semiFinals'
+            : 'quarterFinals';
+    const firstEditableIds = firstEditableStageKey === 'quarterFinals'
+        ? selectedQuarterTeamIds
+        : selectedStarterTeamIds;
+    const gridColumns = showRoundOf16
+        ? '1.25fr 1fr 1fr 1fr'
+        : showQuarterFinals
+            ? '1.2fr 1fr 1fr'
+            : '1.1fr 1fr';
 
-    const renderScoreCell = (team) => (
-        <tr key={team.teamId}>
-            <td>{team.position || ''}</td>
-            <td>{team.teamName}</td>
-            <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
-            <td>{team.played}</td>
-            <td>{team.wins}</td>
-            <td>{team.losses}</td>
-            <td>{team.pointsFor}</td>
-            <td>{team.pointsAgainst}</td>
-            <td>{team.diff > 0 ? `+${team.diff}` : team.diff}</td>
-            <td>{team.totalScore > 0 ? `+${team.totalScore}` : team.totalScore}</td>
-        </tr>
-    );
+    const commonFinalCardProps = {
+        allGroups: finalOptionGroups,
+        getTeamNameById,
+        getTeamLabelById,
+        matchFormatKey: finalMatchFormatKey,
+    };
 
     return (
         <section className="card full-width">
@@ -120,6 +177,11 @@ function PhasesFinal({ ctx }) {
                     </select>
                 </label>
 
+                <FinalMatchFormatSelector
+                    value={finalMatchFormatKey}
+                    onChange={handleFinalMatchFormatChange}
+                />
+
                 <div className="final-settings-help">
                     <strong>Logique auto :</strong> TS &gt; meilleurs de poule &gt; équipes plus faibles.
                     Le tirage évite autant que possible les matchs entre équipes d’une même poule au premier tour.
@@ -137,14 +199,10 @@ function PhasesFinal({ ctx }) {
                                     title={`Huitième ${index + 1}`}
                                     match={match}
                                     editableTeams={true}
-                                    allGroups={finalOptionGroups}
                                     unavailableTeamIds={firstEditableIds}
-                                    getTeamNameById={getTeamNameById}
-                                    getTeamLabelById={getTeamLabelById}
                                     onTeamChange={(field, value) => handleFinalStageTeamChange('roundOf16', index, field, value)}
-                                    onScoreChange={(field, value) =>
-                                        handleFinalMatchScore('roundOf16', index, field, value)
-                                    }
+                                    onScoreChange={(field, value) => handleFinalMatchScore('roundOf16', index, field, value)}
+                                    {...commonFinalCardProps}
                                 />
                             ))}
                         </div>
@@ -159,14 +217,10 @@ function PhasesFinal({ ctx }) {
                                     title={`Quart ${index + 1}`}
                                     match={match}
                                     editableTeams={entryRound === 'quarter'}
-                                    allGroups={finalOptionGroups}
                                     unavailableTeamIds={entryRound === 'quarter' ? firstEditableIds : undefined}
-                                    getTeamNameById={getTeamNameById}
-                                    getTeamLabelById={getTeamLabelById}
                                     onTeamChange={(field, value) => handleQuarterTeamChange(index, field, value)}
-                                    onScoreChange={(field, value) =>
-                                        handleFinalMatchScore('quarterFinals', index, field, value)
-                                    }
+                                    onScoreChange={(field, value) => handleFinalMatchScore('quarterFinals', index, field, value)}
+                                    {...commonFinalCardProps}
                                 />
                             ))}
                         </div>
@@ -181,14 +235,10 @@ function PhasesFinal({ ctx }) {
                                 match={match}
                                 accent="accent-blue"
                                 editableTeams={entryRound === 'semi'}
-                                allGroups={finalOptionGroups}
                                 unavailableTeamIds={entryRound === 'semi' ? firstEditableIds : undefined}
-                                getTeamNameById={getTeamNameById}
-                                getTeamLabelById={getTeamLabelById}
                                 onTeamChange={(field, value) => handleFinalStageTeamChange('semiFinals', index, field, value)}
-                                onScoreChange={(field, value) =>
-                                    handleFinalMatchScore('semiFinals', index, field, value)
-                                }
+                                onScoreChange={(field, value) => handleFinalMatchScore('semiFinals', index, field, value)}
+                                {...commonFinalCardProps}
                             />
                         ))}
                     </div>
@@ -199,10 +249,8 @@ function PhasesFinal({ ctx }) {
                             title="Finale"
                             match={safeFinalStage.final}
                             accent="accent-gold"
-                            allGroups={finalOptionGroups}
-                            getTeamNameById={getTeamNameById}
-                            getTeamLabelById={getTeamLabelById}
                             onScoreChange={(field, value) => handleFinalMatchScore('final', 0, field, value)}
+                            {...commonFinalCardProps}
                         />
                     </div>
                 </div>
@@ -215,12 +263,8 @@ function PhasesFinal({ ctx }) {
                         title="Petite finale"
                         match={safeFinalStage.thirdPlace}
                         accent="accent-blue"
-                        allGroups={finalOptionGroups}
-                        getTeamNameById={getTeamNameById}
-                        getTeamLabelById={getTeamLabelById}
-                        onScoreChange={(field, value) =>
-                            handleFinalMatchScore('thirdPlace', 0, field, value)
-                        }
+                        onScoreChange={(field, value) => handleFinalMatchScore('thirdPlace', 0, field, value)}
+                        {...commonFinalCardProps}
                     />
                 </div>
             ) : null}
@@ -228,135 +272,53 @@ function PhasesFinal({ ctx }) {
             {safeFinalStage.settings.enablePlacement5to8 && entryRound !== 'semi' ? (
                 <div className="card planning-card">
                     <h2>Classement 5e à 8e</h2>
-                    <p className="note">
-                        Les perdants des quarts jouent des matchs de classement. Sans match supplémentaire,
-                        ils seront départagés uniquement sur leurs points de phase finale puis sur la
-                        différence de points.
-                    </p>
 
-                    <div
-                        className="bracket-board"
-                        style={{ gridTemplateColumns: '1fr 1fr', marginTop: '1rem' }}
-                    >
-                        {safeFinalStage.placement5to8Semis.map((match, index) => (
+                    <div className="bracket-board" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                        <div className="bracket-column">
+                            <div className="bracket-column-title">Demi-finales 5-8</div>
+                            {safeFinalStage.placement5to8Semis.map((match, index) => (
+                                <FinalMatchCard
+                                    key={match.id}
+                                    title={`Classement 5-8 / Demi ${index + 1}`}
+                                    match={match}
+                                    accent="accent-blue"
+                                    onScoreChange={(field, value) => handleFinalMatchScore('placement5to8Semis', index, field, value)}
+                                    {...commonFinalCardProps}
+                                />
+                            ))}
+                        </div>
+
+                        <div className="bracket-column">
+                            <div className="bracket-column-title">Places 5 et 7</div>
                             <FinalMatchCard
-                                key={match.id}
-                                title={`Classement ${index + 1}`}
-                                match={match}
-                                accent="accent-blue"
-                                allGroups={finalOptionGroups}
-                                getTeamNameById={getTeamNameById}
-                                getTeamLabelById={getTeamLabelById}
-                                onScoreChange={(field, value) =>
-                                    handleFinalMatchScore('placement5to8Semis', index, field, value)
-                                }
+                                title="Match place 5"
+                                match={safeFinalStage.placement5to8Finals.place5}
+                                accent="accent-gold"
+                                onScoreChange={(field, value) => handleFinalMatchScore('placement5to8Finals', 'place5', field, value)}
+                                {...commonFinalCardProps}
                             />
-                        ))}
-                    </div>
-
-                    <div
-                        className="bracket-board"
-                        style={{ gridTemplateColumns: '1fr 1fr', marginTop: '1rem' }}
-                    >
-                        <FinalMatchCard
-                            title="Match place 5"
-                            match={safeFinalStage.placement5to8Finals.place5}
-                            accent="accent-blue"
-                            allGroups={finalOptionGroups}
-                            getTeamNameById={getTeamNameById}
-                            getTeamLabelById={getTeamLabelById}
-                            onScoreChange={(field, value) =>
-                                handleFinalMatchScore('placement5to8Finals', 'place5', field, value)
-                            }
-                        />
-
-                        <FinalMatchCard
-                            title="Match place 7"
-                            match={safeFinalStage.placement5to8Finals.place7}
-                            accent="accent-blue"
-                            allGroups={finalOptionGroups}
-                            getTeamNameById={getTeamNameById}
-                            getTeamLabelById={getTeamLabelById}
-                            onScoreChange={(field, value) =>
-                                handleFinalMatchScore('placement5to8Finals', 'place7', field, value)
-                            }
-                        />
+                            <FinalMatchCard
+                                title="Match place 7"
+                                match={safeFinalStage.placement5to8Finals.place7}
+                                onScoreChange={(field, value) => handleFinalMatchScore('placement5to8Finals', 'place7', field, value)}
+                                {...commonFinalCardProps}
+                            />
+                        </div>
                     </div>
                 </div>
             ) : null}
 
-            <div className="card planning-card">
-                <h2>Points phase finale uniquement</h2>
-                <p className="note">
-                    Ce tableau sert au <strong>départage</strong> lorsqu’il n’y a pas de petite finale ou de matchs de classement (5–8).
-                    Il ne remplace jamais le <strong>parcours dans le tableau final</strong>.
-                </p>
+            <RankingTable
+                title="Statistiques phase finale uniquement"
+                rows={finalOnlyPointsRanking}
+                formatRank={formatRank}
+            />
 
-                <div className="table-wrapper">
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Équipe</th>
-                            <th>Rang cumulé</th>
-                            <th>J</th>
-                            <th>V</th>
-                            <th>D</th>
-                            <th>PF</th>
-                            <th>PA</th>
-                            <th>Diff</th>
-                            <th>Total</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {finalOnlyPointsRanking.length === 0 ? (
-                            <tr>
-                                <td colSpan="10">Aucun score de phase finale pour le moment.</td>
-                            </tr>
-                        ) : (
-                            finalOnlyPointsRanking.map((team, index) => renderScoreCell({ ...team, position: index + 1 }))
-                        )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div className="card planning-card">
-                <h2>Cumuls points poules + phase finale</h2>
-                <p className="note">
-                    Ce tableau additionne tous les matchs joués en poules et en phase finale pour donner
-                    une vue d’ensemble. Il reste purement indicatif et ne décide pas du placement final
-                    devant le parcours de phase finale.
-                </p>
-
-                <div className="table-wrapper">
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Équipe</th>
-                            <th>Rang cumulé</th>
-                            <th>J</th>
-                            <th>V</th>
-                            <th>D</th>
-                            <th>PF</th>
-                            <th>PA</th>
-                            <th>Diff</th>
-                            <th>Total</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {combinedPointsRanking.length === 0 ? (
-                            <tr>
-                                <td colSpan="10">Aucun cumul disponible pour le moment.</td>
-                            </tr>
-                        ) : (
-                            combinedPointsRanking.map((team, index) => renderScoreCell({ ...team, position: index + 1 }))
-                        )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <RankingTable
+                title="Statistiques globales poules + phase finale"
+                rows={combinedPointsRanking}
+                formatRank={formatRank}
+            />
         </section>
     );
 }

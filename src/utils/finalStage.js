@@ -6,6 +6,12 @@ function uid() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function sanitizeMatchFormatKey(value) {
+    return ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2', 'E'].includes(value)
+        ? value
+        : 'D1';
+}
+
 function createStageMatch(label = '') {
     return {
         id: uid(),
@@ -14,6 +20,9 @@ function createStageMatch(label = '') {
         teamBId: '',
         scoreA: '',
         scoreB: '',
+        scoreDetail: null,
+        formatKey: 'D1',
+        matchFormatKey: 'D1',
     };
 }
 
@@ -24,6 +33,7 @@ export function createEmptyFinalStage() {
             poolQualifierMode: 'top2',
             enableThirdPlaceMatch: false,
             enablePlacement5to8: false,
+            finalMatchFormatKey: 'D1',
         },
         roundOf16: Array.from({ length: 8 }, (_, index) => createStageMatch(`Huitième ${index + 1}`)),
         quarterFinals: [
@@ -63,6 +73,13 @@ function ensureMatchCount(matches, count, labelPrefix) {
 }
 
 function sanitizeMatch(match, fallbackLabel = '') {
+    const formatKey = sanitizeMatchFormatKey(
+        match?.formatKey ||
+        match?.matchFormatKey ||
+        match?.scoreDetail?.formatKey ||
+        'D1'
+    );
+
     return {
         id: match?.id || uid(),
         label: match?.label || fallbackLabel,
@@ -70,6 +87,9 @@ function sanitizeMatch(match, fallbackLabel = '') {
         teamBId: match?.teamBId || '',
         scoreA: match?.scoreA ?? '',
         scoreB: match?.scoreB ?? '',
+        scoreDetail: match?.scoreDetail || null,
+        formatKey,
+        matchFormatKey: formatKey,
     };
 }
 
@@ -82,6 +102,11 @@ function sanitizeStage(stage) {
             poolQualifierMode: sanitizeQualifierMode(stage?.settings?.poolQualifierMode || empty.settings.poolQualifierMode),
             enableThirdPlaceMatch: Boolean(stage?.settings?.enableThirdPlaceMatch),
             enablePlacement5to8: Boolean(stage?.settings?.enablePlacement5to8),
+            finalMatchFormatKey: sanitizeMatchFormatKey(
+                stage?.settings?.finalMatchFormatKey ||
+                stage?.settings?.matchFormatKey ||
+                'D1'
+            ),
         },
         roundOf16: ensureMatchCount(stage?.roundOf16 || empty.roundOf16, 8, 'Huitième'),
         quarterFinals: ensureMatchCount(stage?.quarterFinals || empty.quarterFinals, 4, 'Quart'),
@@ -107,12 +132,22 @@ function preserveScoresIfSameTeams(previousMatch, nextTeamAId, nextTeamBId) {
         (previousMatch?.teamAId || '') === (nextTeamAId || '') &&
         (previousMatch?.teamBId || '') === (nextTeamBId || '');
 
+    const previousFormatKey = sanitizeMatchFormatKey(
+        previousMatch?.formatKey ||
+        previousMatch?.matchFormatKey ||
+        previousMatch?.scoreDetail?.formatKey ||
+        'D1'
+    );
+
     return {
         ...previousMatch,
         teamAId: nextTeamAId || '',
         teamBId: nextTeamBId || '',
         scoreA: sameTeams ? previousMatch?.scoreA ?? '' : '',
         scoreB: sameTeams ? previousMatch?.scoreB ?? '' : '',
+        scoreDetail: sameTeams ? previousMatch?.scoreDetail || null : null,
+        formatKey: sameTeams ? previousFormatKey : 'D1',
+        matchFormatKey: sameTeams ? previousFormatKey : 'D1',
     };
 }
 
@@ -146,10 +181,20 @@ function getLoserTeamId(match) {
 }
 
 function clearScores(match) {
+    const formatKey = sanitizeMatchFormatKey(
+        match?.formatKey ||
+        match?.matchFormatKey ||
+        match?.scoreDetail?.formatKey ||
+        'D1'
+    );
+
     return {
         ...match,
         scoreA: '',
         scoreB: '',
+        scoreDetail: null,
+        formatKey,
+        matchFormatKey: formatKey,
     };
 }
 
@@ -165,7 +210,9 @@ export function setFinalStageOption(stage, optionKey, value) {
             ? sanitizeEntryRound(value)
             : optionKey === 'poolQualifierMode'
                 ? sanitizeQualifierMode(value)
-                : Boolean(value);
+                : optionKey === 'finalMatchFormatKey'
+                    ? sanitizeMatchFormatKey(value)
+                    : Boolean(value);
 
     return {
         ...safeStage,
@@ -199,14 +246,36 @@ export function assignQuarterTeam(stage, matchIndex, field, teamId) {
 
 export function updateFinalStageMatch(stage, stageKey, matchIndex, field, value) {
     const safeStage = sanitizeStage(stage);
-    const sanitized = value === '' ? '' : String(Math.max(0, Number(value) || 0));
+
+    const buildPatch = () => {
+        if (field === 'scoreDetail') {
+            const detail = value || {};
+            const formatKey = sanitizeMatchFormatKey(detail.formatKey || detail.matchFormatKey || 'D1');
+
+            return {
+                scoreA: detail.scoreA ?? '',
+                scoreB: detail.scoreB ?? '',
+                scoreDetail: {
+                    ...detail,
+                    formatKey,
+                },
+                formatKey,
+                matchFormatKey: formatKey,
+            };
+        }
+
+        const sanitized = value === '' ? '' : String(Math.max(0, Number(value) || 0));
+        return { [field]: sanitized };
+    };
+
+    const patch = buildPatch();
 
     if (stageKey === 'final') {
         return {
             ...safeStage,
             final: {
                 ...safeStage.final,
-                [field]: sanitized,
+                ...patch,
             },
         };
     }
@@ -216,7 +285,7 @@ export function updateFinalStageMatch(stage, stageKey, matchIndex, field, value)
             ...safeStage,
             thirdPlace: {
                 ...safeStage.thirdPlace,
-                [field]: sanitized,
+                ...patch,
             },
         };
     }
@@ -228,7 +297,7 @@ export function updateFinalStageMatch(stage, stageKey, matchIndex, field, value)
                 ...safeStage.placement5to8Finals,
                 [matchIndex]: {
                     ...safeStage.placement5to8Finals[matchIndex],
-                    [field]: sanitized,
+                    ...patch,
                 },
             },
         };
@@ -240,7 +309,7 @@ export function updateFinalStageMatch(stage, stageKey, matchIndex, field, value)
             index === matchIndex
                 ? {
                     ...match,
-                    [field]: sanitized,
+                    ...patch,
                 }
                 : match
         ),

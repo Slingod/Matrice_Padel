@@ -44,8 +44,25 @@ import {
     normalizePoolMatchesToFftPadelRotation,
     syncPoolsFromSerpentin,
 } from '../utils/appLogic';
+import { DEFAULT_MATCH_FORMAT, getStoredMatchFormat, storeMatchFormat, setStoredMatchFormat, sanitizeMatchFormatKey } from '../utils/matchFormats';
 
 export function useTournamentState() {
+    const [matchFormatKey, setMatchFormatKey] = useState(() => getStoredMatchFormat());
+
+    useEffect(() => {
+        const handleExternalPoolFormatChange = (event) => {
+            const nextFormat = sanitizeMatchFormatKey(event?.detail?.formatKey);
+            setMatchFormatKey(nextFormat);
+            setStoredMatchFormat(nextFormat);
+        };
+
+        window.addEventListener('padelingo:match-format-change', handleExternalPoolFormatChange);
+
+        return () => {
+            window.removeEventListener('padelingo:match-format-change', handleExternalPoolFormatChange);
+        };
+    }, []);
+
     const initialState = useMemo(() => loadAppState(), []);
     const [baseTeams, setBaseTeams] = useState(initialState.baseTeams || []);
     const [pools, setPools] = useState(initialState.pools);
@@ -177,6 +194,7 @@ export function useTournamentState() {
             finalStage: safeFinalStage,
             courtCount,
             courtLabels,
+            matchFormat: getStoredMatchFormat(),
         });
         setLastSavedAt(savedAt);
     }, [baseTeams, pools, serpentin, activeTab, safeFinalStage, courtCount, courtLabels]);
@@ -641,10 +659,8 @@ export function useTournamentState() {
         });
     }
 
-    function handleMatchScoreChange(matchId, field, value) {
+    function handleMatchScoreChange(matchId, field, value, scoreDetail = null) {
         if (!activePool) return;
-
-        const sanitized = value === '' ? '' : String(Math.max(0, Number(value) || 0));
 
         setPools((prev) =>
             prev.map((pool) =>
@@ -652,13 +668,31 @@ export function useTournamentState() {
                     ? pool
                     : {
                         ...pool,
-                        matches: pool.matches.map((match) =>
-                            match.id === matchId ? { ...match, [field]: sanitized } : match
-                        ),
+                        matches: pool.matches.map((match) => {
+                            if (match.id !== matchId) return match;
+
+                            if (field === 'scoreDetail') {
+                                return {
+                                    ...match,
+                                    scoreDetail: value || null,
+                                    format: value?.format || '',
+                                };
+                            }
+
+                            const sanitized = value === '' ? '' : String(Math.max(0, Number(value) || 0));
+
+                            return {
+                                ...match,
+                                [field]: sanitized,
+                                scoreDetail: scoreDetail || match.scoreDetail || null,
+                                format: scoreDetail?.format || match.format || '',
+                            };
+                        }),
                     }
             )
         );
     }
+
 
     function handleMatchCourtOverrideChange(matchId, value) {
         if (!activePool) return;
@@ -824,6 +858,15 @@ export function useTournamentState() {
         );
     }
 
+    function handleFinalMatchFormatChange(value) {
+        setFinalStage((prev) =>
+            syncFinalStageWithTeams(
+                setFinalStageOption(prev || createEmptyFinalStage(), 'finalMatchFormatKey', value),
+                allTeams
+            )
+        );
+    }
+
     function handleToggleThirdPlace() {
         setFinalStage((prev) =>
             syncFinalStageWithTeams(
@@ -859,6 +902,7 @@ export function useTournamentState() {
             finalStage: safeFinalStage,
             courtCount,
             courtLabels,
+            matchFormat: getStoredMatchFormat(),
         };
     }
 
@@ -870,6 +914,7 @@ export function useTournamentState() {
         setFinalStage(nextState.finalStage || createEmptyFinalStage());
         setCourtCount(nextState.courtCount || 4);
         setCourtLabels(normalizeCourtLabels(nextState.courtLabels, nextState.courtCount || 4));
+        storeMatchFormat(nextState.matchFormat || nextState.format || DEFAULT_MATCH_FORMAT);
         setEditingBaseTeamId(null);
         setEditingBaseDraft(null);
         setEditingMatchCourtId(null);
@@ -1067,7 +1112,20 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
     }
 
 
+    function handleMatchFormatChange(value) {
+        const nextFormat = sanitizeMatchFormatKey(value);
+        setMatchFormatKey(nextFormat);
+        setStoredMatchFormat(nextFormat);
+    }
+
     return {
+        matchFormatKey,
+        selectedMatchFormatKey: matchFormatKey,
+        formatKey: matchFormatKey,
+        handleMatchFormatChange,
+        onMatchFormatChange: handleMatchFormatChange,
+        setMatchFormatKey: handleMatchFormatChange,
+        handleFinalMatchFormatChange,
         activePool,
         activeTab,
         allTeams,

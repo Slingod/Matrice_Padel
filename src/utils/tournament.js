@@ -8,6 +8,18 @@ function uid() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function normalizeScoreDetailForStorage(detail, fallbackFormat = '') {
+    if (!detail || !Array.isArray(detail.sets)) return null;
+
+    return {
+        format: String(detail.format || fallbackFormat || ''),
+        sets: detail.sets.map((set) => ({
+            a: set?.a === undefined || set?.a === null ? '' : String(set.a),
+            b: set?.b === undefined || set?.b === null ? '' : String(set.b),
+        })),
+    };
+}
+
 export function createPlayer(name, rank = 0, slot = '') {
     return {
         id: uid(),
@@ -49,6 +61,8 @@ export function createMatch(teamAId, teamBId, round = 1, localCourt = 1) {
         teamBId,
         scoreA: '',
         scoreB: '',
+        scoreDetail: null,
+        format: '',
         round,
         localCourt,
     };
@@ -129,6 +143,20 @@ function generateScheduledMatches(teams) {
     return generateCircleSchedule(teams);
 }
 
+function copyMatchData(scheduledMatch, existing) {
+    if (!existing) return scheduledMatch;
+
+    return {
+        ...scheduledMatch,
+        id: existing.id || scheduledMatch.id,
+        scoreA: existing.scoreA ?? '',
+        scoreB: existing.scoreB ?? '',
+        scoreDetail: normalizeScoreDetailForStorage(existing.scoreDetail, existing.format) || null,
+        format: existing.format || existing.scoreDetail?.format || '',
+        courtOverride: existing.courtOverride || '',
+    };
+}
+
 export function syncMatchesPreserveScores(teams, existingMatches = []) {
     const scheduled = generateScheduledMatches(teams);
 
@@ -140,15 +168,7 @@ export function syncMatchesPreserveScores(teams, existingMatches = []) {
 
     return scheduled.map((scheduledMatch) => {
         const existing = existingMap.get(pairKey(scheduledMatch.teamAId, scheduledMatch.teamBId));
-
-        if (!existing) return scheduledMatch;
-
-        return {
-            ...scheduledMatch,
-            id: existing.id || scheduledMatch.id,
-            scoreA: existing.scoreA ?? '',
-            scoreB: existing.scoreB ?? '',
-        };
+        return copyMatchData(scheduledMatch, existing);
     });
 }
 
@@ -223,7 +243,6 @@ export function computeRanking(teams, matches) {
 
         teamA.diff += diffA;
         teamB.diff += diffB;
-
         teamA.totalScore += diffA;
         teamB.totalScore += diffB;
 
@@ -280,6 +299,7 @@ export function createDefaultState() {
         finalStage: null,
         courtCount: 4,
         courtLabels: ['1', '2', '3', '4'],
+        matchFormat: 'D1',
         savedAt: null,
     };
 }
@@ -306,6 +326,8 @@ function normalizeMatch(match = {}) {
         teamBId: match.teamBId,
         scoreA: match.scoreA ?? '',
         scoreB: match.scoreB ?? '',
+        scoreDetail: normalizeScoreDetailForStorage(match.scoreDetail, match.format) || null,
+        format: match.format || match.scoreDetail?.format || '',
         round: match.round || 1,
         localCourt: match.localCourt || 1,
         courtOverride: match.courtOverride || '',
@@ -344,7 +366,16 @@ export function normalizeAppState(parsed) {
 
         const matches = syncMatchesPreserveScores(teams, importedMatches).map((match) => {
             const imported = importedByPair.get(pairKey(match.teamAId, match.teamBId));
-            return imported ? { ...match, courtOverride: imported.courtOverride || '' } : match;
+            return imported
+                ? {
+                    ...match,
+                    courtOverride: imported.courtOverride || '',
+                    scoreDetail: imported.scoreDetail || match.scoreDetail || null,
+                    format: imported.format || match.format || '',
+                    scoreA: imported.scoreA ?? match.scoreA ?? '',
+                    scoreB: imported.scoreB ?? match.scoreB ?? '',
+                }
+                : match;
         });
 
         return {
@@ -384,12 +415,14 @@ export function normalizeAppState(parsed) {
             parsed.activeTab === 'planning' ||
             parsed.activeTab === 'finals' ||
             parsed.activeTab === 'final-ranking' ||
+            parsed.activeTab === 'saves' ||
             pools.some((pool) => pool.id === parsed.activeTab)
                 ? parsed.activeTab
                 : 'base',
         finalStage: parsed.finalStage || null,
         courtCount,
         courtLabels: normalizeCourtLabelsForStorage(parsed.courtLabels, courtCount),
+        matchFormat: parsed.matchFormat || parsed.format || 'D1',
         savedAt: parsed.savedAt || null,
     };
 }
