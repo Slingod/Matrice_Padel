@@ -1,3 +1,72 @@
+
+function isFilledScoreValue(value) {
+    return value !== '' && value !== null && value !== undefined;
+}
+
+function getMatchPointsForRanking(match) {
+    const detail = match?.scoreDetail || {};
+
+    if (
+        Number.isFinite(Number(detail.pointsA)) &&
+        Number.isFinite(Number(detail.pointsB)) &&
+        (Number(detail.pointsA) !== 0 || Number(detail.pointsB) !== 0)
+    ) {
+        return {
+            pointsA: Number(detail.pointsA),
+            pointsB: Number(detail.pointsB),
+        };
+    }
+
+    if (Array.isArray(detail.sets)) {
+        return detail.sets.reduce(
+            (acc, set) => {
+                if (!isFilledScoreValue(set?.scoreA) || !isFilledScoreValue(set?.scoreB)) {
+                    return acc;
+                }
+
+                const scoreA = Number(set.scoreA);
+                const scoreB = Number(set.scoreB);
+
+                if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) {
+                    return acc;
+                }
+
+                return {
+                    pointsA: acc.pointsA + scoreA,
+                    pointsB: acc.pointsB + scoreB,
+                };
+            },
+            { pointsA: 0, pointsB: 0 }
+        );
+    }
+
+    return {
+        pointsA: Number(match?.scoreA) || 0,
+        pointsB: Number(match?.scoreB) || 0,
+    };
+}
+
+function getMatchGlobalScoreForRanking(match) {
+    const detail = match?.scoreDetail || {};
+
+    const rawScoreA = isFilledScoreValue(match?.scoreA)
+        ? match.scoreA
+        : isFilledScoreValue(detail.scoreA)
+            ? detail.scoreA
+            : undefined;
+
+    const rawScoreB = isFilledScoreValue(match?.scoreB)
+        ? match.scoreB
+        : isFilledScoreValue(detail.scoreB)
+            ? detail.scoreB
+            : undefined;
+
+    return {
+        scoreA: rawScoreA === undefined ? NaN : Number(rawScoreA),
+        scoreB: rawScoreB === undefined ? NaN : Number(rawScoreB),
+    };
+}
+
 export const STORAGE_KEY = 'matrice-padel-v8';
 
 function uid() {
@@ -9,14 +78,78 @@ function uid() {
 }
 
 function normalizeScoreDetailForStorage(detail, fallbackFormat = '') {
-    if (!detail || !Array.isArray(detail.sets)) return null;
+    if (!detail) return null;
+
+    const sets = Array.isArray(detail.sets)
+        ? detail.sets.map((set) => ({
+            scoreA:
+                set?.scoreA === undefined || set?.scoreA === null
+                    ? set?.a === undefined || set?.a === null
+                        ? ''
+                        : String(set.a)
+                    : String(set.scoreA),
+            scoreB:
+                set?.scoreB === undefined || set?.scoreB === null
+                    ? set?.b === undefined || set?.b === null
+                        ? ''
+                        : String(set.b)
+                    : String(set.scoreB),
+        }))
+        : [];
+
+    const points = sets.reduce(
+        (acc, set) => {
+            if (!isFilledScoreValue(set.scoreA) || !isFilledScoreValue(set.scoreB)) {
+                return acc;
+            }
+
+            const scoreA = Number(set.scoreA);
+            const scoreB = Number(set.scoreB);
+
+            if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) {
+                return acc;
+            }
+
+            return {
+                pointsA: acc.pointsA + scoreA,
+                pointsB: acc.pointsB + scoreB,
+            };
+        },
+        { pointsA: 0, pointsB: 0 }
+    );
+
+    const formatKey =
+        detail.formatKey ||
+        detail.matchFormatKey ||
+        detail.format ||
+        fallbackFormat ||
+        '';
+
+    const scoreA =
+        detail.scoreA === undefined || detail.scoreA === null
+            ? ''
+            : String(detail.scoreA);
+
+    const scoreB =
+        detail.scoreB === undefined || detail.scoreB === null
+            ? ''
+            : String(detail.scoreB);
 
     return {
-        format: String(detail.format || fallbackFormat || ''),
-        sets: detail.sets.map((set) => ({
-            a: set?.a === undefined || set?.a === null ? '' : String(set.a),
-            b: set?.b === undefined || set?.b === null ? '' : String(set.b),
-        })),
+        formatKey,
+        format: detail.format || formatKey,
+        sets,
+        scoreA,
+        scoreB,
+        pointsA:
+            detail.pointsA === undefined || detail.pointsA === null
+                ? points.pointsA
+                : Number(detail.pointsA) || 0,
+        pointsB:
+            detail.pointsB === undefined || detail.pointsB === null
+                ? points.pointsB
+                : Number(detail.pointsB) || 0,
+        isComplete: Boolean(detail.isComplete || (scoreA !== '' && scoreB !== '')),
     };
 }
 
@@ -152,7 +285,7 @@ function copyMatchData(scheduledMatch, existing) {
         scoreA: existing.scoreA ?? '',
         scoreB: existing.scoreB ?? '',
         scoreDetail: normalizeScoreDetailForStorage(existing.scoreDetail, existing.format) || null,
-        format: existing.format || existing.scoreDetail?.format || '',
+        format: existing.format || existing.scoreDetail?.formatKey || existing.scoreDetail?.format || existing.formatKey || existing.matchFormatKey || '',
         courtOverride: existing.courtOverride || '',
     };
 }
@@ -180,12 +313,11 @@ export function optimizeMatchOrder(matches = []) {
 }
 
 export function getWinner(match) {
-    const scoreA = Number(match.scoreA);
-    const scoreB = Number(match.scoreB);
+    const globalScore = getMatchGlobalScoreForRanking(match);
+    const scoreA = globalScore.scoreA;
+    const scoreB = globalScore.scoreB;
 
     const isValid =
-        match.scoreA !== '' &&
-        match.scoreB !== '' &&
         Number.isFinite(scoreA) &&
         Number.isFinite(scoreB);
 
@@ -214,14 +346,16 @@ export function computeRanking(teams, matches) {
     ranking.forEach((team) => teamMap.set(team.teamId, team));
 
     matches.forEach((match) => {
-        const scoreA = Number(match.scoreA);
-        const scoreB = Number(match.scoreB);
+        const globalScore = getMatchGlobalScoreForRanking(match);
+        const scoreA = globalScore.scoreA;
+        const scoreB = globalScore.scoreB;
+        const rankingPoints = getMatchPointsForRanking(match);
 
         const isValid =
             Number.isFinite(scoreA) &&
             Number.isFinite(scoreB) &&
-            match.scoreA !== '' &&
-            match.scoreB !== '';
+            match.teamAId &&
+            match.teamBId;
 
         if (!isValid) return;
 
@@ -233,13 +367,13 @@ export function computeRanking(teams, matches) {
         teamA.played += 1;
         teamB.played += 1;
 
-        teamA.pointsFor += scoreA;
-        teamA.pointsAgainst += scoreB;
-        teamB.pointsFor += scoreB;
-        teamB.pointsAgainst += scoreA;
+        teamA.pointsFor += rankingPoints.pointsA;
+        teamA.pointsAgainst += rankingPoints.pointsB;
+        teamB.pointsFor += rankingPoints.pointsB;
+        teamB.pointsAgainst += rankingPoints.pointsA;
 
-        const diffA = scoreA - scoreB;
-        const diffB = scoreB - scoreA;
+        const diffA = rankingPoints.pointsA - rankingPoints.pointsB;
+        const diffB = rankingPoints.pointsB - rankingPoints.pointsA;
 
         teamA.diff += diffA;
         teamB.diff += diffB;
@@ -327,7 +461,7 @@ function normalizeMatch(match = {}) {
         scoreA: match.scoreA ?? '',
         scoreB: match.scoreB ?? '',
         scoreDetail: normalizeScoreDetailForStorage(match.scoreDetail, match.format) || null,
-        format: match.format || match.scoreDetail?.format || '',
+        format: match.format || match.scoreDetail?.formatKey || match.scoreDetail?.format || match.formatKey || match.matchFormatKey || '',
         round: match.round || 1,
         localCourt: match.localCourt || 1,
         courtOverride: match.courtOverride || '',
@@ -371,7 +505,7 @@ export function normalizeAppState(parsed) {
                     ...match,
                     courtOverride: imported.courtOverride || '',
                     scoreDetail: imported.scoreDetail || match.scoreDetail || null,
-                    format: imported.format || match.format || '',
+                    format: imported.format || imported.scoreDetail?.formatKey || imported.scoreDetail?.format || match.format || '',
                     scoreA: imported.scoreA ?? match.scoreA ?? '',
                     scoreB: imported.scoreB ?? match.scoreB ?? '',
                 }

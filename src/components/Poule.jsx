@@ -1,6 +1,81 @@
+import { useEffect, useState } from 'react';
 import { FaCog } from 'react-icons/fa';
 import { getWinner } from '../utils/tournament';
 import MatchScoreEditor from './MatchScoreEditor.jsx';
+import { getStoredMatchScore } from '../utils/matchScoreStorage';
+
+function isFilledRankingScore(value) {
+    return value !== '' && value !== null && value !== undefined;
+}
+
+function computeStoredSetScoreForRanking(scoreDetail = {}) {
+    if (isFilledRankingScore(scoreDetail.scoreA) && isFilledRankingScore(scoreDetail.scoreB)) {
+        return {
+            scoreA: scoreDetail.scoreA,
+            scoreB: scoreDetail.scoreB,
+        };
+    }
+
+    if (!Array.isArray(scoreDetail.sets)) {
+        return {
+            scoreA: '',
+            scoreB: '',
+        };
+    }
+
+    let wonA = 0;
+    let wonB = 0;
+    const requiredSets = scoreDetail.formatKey === 'D1' || scoreDetail.formatKey === 'D2' || scoreDetail.formatKey === 'E' ? 1 : 2;
+
+    for (const set of scoreDetail.sets) {
+        if (!isFilledRankingScore(set?.scoreA) || !isFilledRankingScore(set?.scoreB)) continue;
+
+        const scoreA = Number(set.scoreA);
+        const scoreB = Number(set.scoreB);
+
+        if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB) || scoreA === scoreB) continue;
+
+        if (scoreA > scoreB) {
+            wonA += 1;
+        } else {
+            wonB += 1;
+        }
+
+        if (wonA >= requiredSets || wonB >= requiredSets) break;
+    }
+
+    return {
+        scoreA: wonA >= requiredSets || wonB >= requiredSets ? String(wonA) : '',
+        scoreB: wonA >= requiredSets || wonB >= requiredSets ? String(wonB) : '',
+    };
+}
+
+function hydrateMatchForRanking(match) {
+    const storedScore = getStoredMatchScore(match?.id);
+    const scoreDetail = match?.scoreDetail || storedScore;
+
+    if (!scoreDetail) return match;
+
+    const globalScore = computeStoredSetScoreForRanking(scoreDetail);
+
+    return {
+        ...match,
+        scoreA: isFilledRankingScore(match?.scoreA) ? match.scoreA : globalScore.scoreA,
+        scoreB: isFilledRankingScore(match?.scoreB) ? match.scoreB : globalScore.scoreB,
+        scoreDetail: {
+            ...scoreDetail,
+            scoreA: isFilledRankingScore(scoreDetail.scoreA) ? scoreDetail.scoreA : globalScore.scoreA,
+            scoreB: isFilledRankingScore(scoreDetail.scoreB) ? scoreDetail.scoreB : globalScore.scoreB,
+        },
+        formatKey: scoreDetail.formatKey || match?.formatKey,
+        matchFormatKey: scoreDetail.formatKey || match?.matchFormatKey,
+    };
+}
+
+function hydratePoolMatchesForRanking(matches = []) {
+    return (matches || []).map(hydrateMatchForRanking);
+}
+
 
 function sortMatchesForDisplay(matches) {
     return [...(matches || [])].sort((a, b) => {
@@ -10,6 +85,70 @@ function sortMatchesForDisplay(matches) {
 }
 
 function Poule({ ctx }) {
+    const [matchScoreRefreshKey, setMatchScoreRefreshKey] = useState(0);
+    void matchScoreRefreshKey;
+
+
+function getDisplayPointsDiff(match) {
+    const detail = match?.scoreDetail || {};
+    const pointsA = Number(detail.pointsA);
+    const pointsB = Number(detail.pointsB);
+
+    if (Number.isFinite(pointsA) && Number.isFinite(pointsB) && (pointsA !== 0 || pointsB !== 0)) {
+        return {
+            diffA: pointsA - pointsB,
+            diffB: pointsB - pointsA,
+        };
+    }
+
+    if (Array.isArray(detail.sets)) {
+        const points = detail.sets.reduce(
+            (acc, set) => {
+                if (!isFilledRankingScore(set?.scoreA) || !isFilledRankingScore(set?.scoreB)) {
+                    return acc;
+                }
+
+                const scoreA = Number(set.scoreA);
+                const scoreB = Number(set.scoreB);
+
+                if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) {
+                    return acc;
+                }
+
+                return {
+                    pointsA: acc.pointsA + scoreA,
+                    pointsB: acc.pointsB + scoreB,
+                };
+            },
+            { pointsA: 0, pointsB: 0 }
+        );
+
+        if (points.pointsA !== 0 || points.pointsB !== 0) {
+            return {
+                diffA: points.pointsA - points.pointsB,
+                diffB: points.pointsB - points.pointsA,
+            };
+        }
+    }
+
+    return {
+        diffA: '',
+        diffB: '',
+    };
+}
+    useEffect(() => {
+        const handleMatchScoreChangeEvent = () => {
+            setMatchScoreRefreshKey((value) => value + 1);
+        };
+
+        window.addEventListener('padelingo:match-score-change', handleMatchScoreChangeEvent);
+
+        return () => {
+            window.removeEventListener('padelingo:match-score-change', handleMatchScoreChangeEvent);
+        };
+    }, []);
+
+
     const {
         activePool,
         displayCourtLabel,
@@ -92,22 +231,7 @@ function Poule({ ctx }) {
                             <tbody>
                             {sortMatchesForDisplay(activePool.matches).map((match) => {
                                 const winner = getWinner(match);
-                                const scoreA = Number(match.scoreA);
-                                const scoreB = Number(match.scoreB);
-                                const diffA =
-                                    match.scoreA !== '' &&
-                                    match.scoreB !== '' &&
-                                    Number.isFinite(scoreA) &&
-                                    Number.isFinite(scoreB)
-                                        ? scoreA - scoreB
-                                        : '';
-                                const diffB =
-                                    match.scoreA !== '' &&
-                                    match.scoreB !== '' &&
-                                    Number.isFinite(scoreA) &&
-                                    Number.isFinite(scoreB)
-                                        ? scoreB - scoreA
-                                        : '';
+                                const { diffA, diffB } = getDisplayPointsDiff(match);
 
                                 return (
                                     <tr key={match.id}>
@@ -166,8 +290,17 @@ function Poule({ ctx }) {
                                             <MatchScoreEditor
                                                 match={match}
                                                 globalFormatKey={ctx.matchFormatKey || 'D1'}
-                                                onScoreChange={(field, value, scoreDetail) =>
-                                                    handleMatchScoreChange(match.id, field, value, scoreDetail)
+                                                onScoreChange={(scoreA, scoreB, scoreDetail) =>
+                                                    handleMatchScoreChange(
+                                                        match.id,
+                                                        'scoreDetail',
+                                                        {
+                                                            ...(scoreDetail || {}),
+                                                            scoreA,
+                                                            scoreB,
+                                                        },
+                                                        scoreDetail
+                                                    )
                                                 }
                                             />
                                         </td>

@@ -194,10 +194,10 @@ export function useTournamentState() {
             finalStage: safeFinalStage,
             courtCount,
             courtLabels,
-            matchFormat: getStoredMatchFormat(),
+            matchFormat: matchFormatKey,
         });
         setLastSavedAt(savedAt);
-    }, [baseTeams, pools, serpentin, activeTab, safeFinalStage, courtCount, courtLabels]);
+    }, [baseTeams, pools, serpentin, activeTab, safeFinalStage, courtCount, courtLabels, matchFormatKey]);
 
     useEffect(() => {
         if (!saveNotice) return undefined;
@@ -255,12 +255,14 @@ export function useTournamentState() {
 
         pools.forEach((pool) => {
             pool.matches.forEach((match) => {
-                applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+                const statScores = getMatchStatScores(match);
+                applyMatchToStats(statMap, match.teamAId, match.teamBId, statScores.scoreA, statScores.scoreB);
             });
         });
 
         getFinalStageMatchesForStats(safeFinalStage).forEach((match) => {
-            applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+            const statScores = getMatchStatScores(match);
+                applyMatchToStats(statMap, match.teamAId, match.teamBId, statScores.scoreA, statScores.scoreB);
         });
 
         return [...statMap.values()]
@@ -283,7 +285,8 @@ export function useTournamentState() {
         const statMap = new Map(allTeams.map((team) => [team.id, createCombinedStatRow(team)]));
 
         getFinalStageMatchesForStats(safeFinalStage).forEach((match) => {
-            applyMatchToStats(statMap, match.teamAId, match.teamBId, match.scoreA, match.scoreB);
+            const statScores = getMatchStatScores(match);
+                applyMatchToStats(statMap, match.teamAId, match.teamBId, statScores.scoreA, statScores.scoreB);
         });
 
         return [...statMap.values()]
@@ -355,6 +358,60 @@ export function useTournamentState() {
         () => buildGlobalPlanning(pools, Math.max(1, Number(courtCount) || 1)),
         [pools, courtCount]
     );
+
+
+    function getMatchStatScores(match) {
+        const detail = match?.scoreDetail || {};
+
+        const detailPointsA = Number(detail.pointsA);
+        const detailPointsB = Number(detail.pointsB);
+
+        if (
+            Number.isFinite(detailPointsA) &&
+            Number.isFinite(detailPointsB) &&
+            (detailPointsA !== 0 || detailPointsB !== 0)
+        ) {
+            return {
+                scoreA: String(detailPointsA),
+                scoreB: String(detailPointsB),
+            };
+        }
+
+        if (Array.isArray(detail.sets)) {
+            const points = detail.sets.reduce(
+                (acc, set) => {
+                    const rawA = set?.scoreA ?? set?.a;
+                    const rawB = set?.scoreB ?? set?.b;
+
+                    if (rawA === '' || rawA === null || rawA === undefined) return acc;
+                    if (rawB === '' || rawB === null || rawB === undefined) return acc;
+
+                    const scoreA = Number(rawA);
+                    const scoreB = Number(rawB);
+
+                    if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return acc;
+
+                    return {
+                        pointsA: acc.pointsA + scoreA,
+                        pointsB: acc.pointsB + scoreB,
+                    };
+                },
+                { pointsA: 0, pointsB: 0 }
+            );
+
+            if (points.pointsA !== 0 || points.pointsB !== 0) {
+                return {
+                    scoreA: String(points.pointsA),
+                    scoreB: String(points.pointsB),
+                };
+            }
+        }
+
+        return {
+            scoreA: match?.scoreA ?? '',
+            scoreB: match?.scoreB ?? '',
+        };
+    }
 
     function formatRank(value) {
         const number = Number(value) || 0;
@@ -672,10 +729,38 @@ export function useTournamentState() {
                             if (match.id !== matchId) return match;
 
                             if (field === 'scoreDetail') {
+                                const detail = value || {};
+                                const nextScoreA =
+                                    detail.scoreA === undefined || detail.scoreA === null
+                                        ? ''
+                                        : String(detail.scoreA);
+                                const nextScoreB =
+                                    detail.scoreB === undefined || detail.scoreB === null
+                                        ? ''
+                                        : String(detail.scoreB);
+                                const nextFormat =
+                                    detail.formatKey ||
+                                    detail.matchFormatKey ||
+                                    detail.format ||
+                                    match.format ||
+                                    match.formatKey ||
+                                    match.matchFormatKey ||
+                                    '';
+
                                 return {
                                     ...match,
-                                    scoreDetail: value || null,
-                                    format: value?.format || '',
+                                    scoreA: nextScoreA,
+                                    scoreB: nextScoreB,
+                                    scoreDetail: {
+                                        ...detail,
+                                        scoreA: nextScoreA,
+                                        scoreB: nextScoreB,
+                                        formatKey: nextFormat,
+                                        format: detail.format || nextFormat,
+                                    },
+                                    format: nextFormat,
+                                    formatKey: nextFormat,
+                                    matchFormatKey: nextFormat,
                                 };
                             }
 
@@ -685,7 +770,11 @@ export function useTournamentState() {
                                 ...match,
                                 [field]: sanitized,
                                 scoreDetail: scoreDetail || match.scoreDetail || null,
-                                format: scoreDetail?.format || match.format || '',
+                                format:
+                                    scoreDetail?.formatKey ||
+                                    scoreDetail?.format ||
+                                    match.format ||
+                                    '',
                             };
                         }),
                     }
@@ -902,19 +991,21 @@ export function useTournamentState() {
             finalStage: safeFinalStage,
             courtCount,
             courtLabels,
-            matchFormat: getStoredMatchFormat(),
+            matchFormat: matchFormatKey,
         };
     }
 
     function applyTournamentState(nextState) {
-        setBaseTeams(nextState.baseTeams || []);
+        const nextMatchFormat = sanitizeMatchFormatKey(nextState.matchFormat || nextState.format || DEFAULT_MATCH_FORMAT);
+        setMatchFormatKey(nextMatchFormat);
+setBaseTeams(nextState.baseTeams || []);
         setPools(nextState.pools || []);
         setSerpentin(nextState.serpentin || {});
         setActiveTab(nextState.activeTab || 'base');
         setFinalStage(nextState.finalStage || createEmptyFinalStage());
         setCourtCount(nextState.courtCount || 4);
         setCourtLabels(normalizeCourtLabels(nextState.courtLabels, nextState.courtCount || 4));
-        storeMatchFormat(nextState.matchFormat || nextState.format || DEFAULT_MATCH_FORMAT);
+        storeMatchFormat(nextMatchFormat);
         setEditingBaseTeamId(null);
         setEditingBaseDraft(null);
         setEditingMatchCourtId(null);

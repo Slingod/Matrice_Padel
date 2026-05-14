@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getMatchFormat, getRequiredSetsToWin } from '../utils/matchFormats';
 import {
     getStoredMatchScore,
@@ -89,14 +89,21 @@ function computeMatchScoreFromSets(sets, formatKey) {
     return {
         scoreA: isComplete ? String(wonA) : '',
         scoreB: isComplete ? String(wonB) : '',
-        wonA,
-        wonB,
         pointsA,
         pointsB,
         isComplete,
-        requiredSets,
         format,
     };
+}
+
+function notifyScoreChanged(matchId, payload) {
+    if (typeof window === 'undefined') return;
+
+    window.dispatchEvent(
+        new CustomEvent('padelingo:match-score-change', {
+            detail: { matchId, payload },
+        })
+    );
 }
 
 function callParentScoreChange(onScoreChange, scoreA, scoreB, metadata) {
@@ -126,18 +133,20 @@ function getSetLabel(format, index) {
     return format.setLabels?.[index] || `Set ${index + 1}`;
 }
 
+function makeScoreSignature(matchId, formatKey, sets) {
+    return JSON.stringify({ matchId, formatKey, sets });
+}
+
 function MatchScoreEditor(props) {
-    const {
-        match,
-        onScoreChange,
-        disabled = false,
-    } = props;
+    const { match, onScoreChange, disabled = false } = props;
 
     const globalFormatKey = getGlobalFormatKey(props);
     const [storedScore, setStoredScore] = useState(() => getStoredMatchScore(match?.id));
+    const lastHydratedSignatureRef = useRef('');
 
     useEffect(() => {
         setStoredScore(getStoredMatchScore(match?.id));
+        lastHydratedSignatureRef.current = '';
     }, [match?.id]);
 
     const storedHasAnyScore = useMemo(
@@ -156,29 +165,15 @@ function MatchScoreEditor(props) {
         matchDetailHasAnyScore;
 
     const effectiveFormatKey = useMemo(() => {
-        // Règle importante :
-        // Match sans score réel = il suit le format global immédiatement.
-        if (!matchHasRealScore) {
-            return globalFormatKey;
-        }
-
-        // Match avec score réel = il garde son format sauvegardé.
+        if (!matchHasRealScore) return globalFormatKey;
         return getSavedMatchFormatKey(match, storedScore);
     }, [matchHasRealScore, globalFormatKey, match, storedScore]);
 
     const format = getMatchFormat(effectiveFormatKey);
 
     const sets = useMemo(() => {
-        // Match vide : on reconstruit les sets depuis le format global.
-        if (!matchHasRealScore) {
-            return buildEmptySets(globalFormatKey);
-        }
-
-        // Priorité aux détails dans le match, car ils sont sauvegardés dans “Mes tournois”.
-        if (match?.scoreDetail?.sets) {
-            return normalizeSets(match.scoreDetail.sets, effectiveFormatKey);
-        }
-
+        if (!matchHasRealScore) return buildEmptySets(globalFormatKey);
+        if (match?.scoreDetail?.sets) return normalizeSets(match.scoreDetail.sets, effectiveFormatKey);
         return normalizeSets(storedScore?.sets, effectiveFormatKey);
     }, [
         matchHasRealScore,
@@ -195,6 +190,34 @@ function MatchScoreEditor(props) {
 
     const isLockedForThisMatch = matchHasRealScore;
 
+    useEffect(() => {
+        if (!match?.id || disabled) return;
+        if (!hasAnySetScore(sets)) return;
+
+        const signature = makeScoreSignature(match.id, effectiveFormatKey, sets);
+        if (lastHydratedSignatureRef.current === signature) return;
+
+        const nextComputed = computeMatchScoreFromSets(sets, effectiveFormatKey);
+
+        const metadata = {
+            formatKey: effectiveFormatKey,
+            sets,
+            pointsA: nextComputed.pointsA,
+            pointsB: nextComputed.pointsB,
+            isComplete: nextComputed.isComplete,
+        };
+
+        callParentScoreChange(onScoreChange, nextComputed.scoreA, nextComputed.scoreB, metadata);
+
+        notifyScoreChanged(match.id, {
+            scoreA: nextComputed.scoreA,
+            scoreB: nextComputed.scoreB,
+            ...metadata,
+        });
+
+        lastHydratedSignatureRef.current = signature;
+    }, [match?.id, disabled, effectiveFormatKey, sets, onScoreChange]);
+
     function persistSets(nextSets) {
         if (!match?.id) return;
 
@@ -204,40 +227,50 @@ function MatchScoreEditor(props) {
             removeStoredMatchScore(match.id);
             setStoredScore(null);
 
-            callParentScoreChange(onScoreChange, '', '', {
+            const metadata = {
                 formatKey: globalFormatKey,
                 sets: buildEmptySets(globalFormatKey),
+                pointsA: 0,
+                pointsB: 0,
                 isComplete: false,
-            });
+            };
 
+            callParentScoreChange(onScoreChange, '', '', metadata);
+            notifyScoreChanged(match.id, { scoreA: '', scoreB: '', ...metadata });
             return;
         }
 
-        // Dès qu'un score est saisi, le format du match est figé sur le format affiché.
         const formatKeyToSave = effectiveFormatKey || globalFormatKey;
         const normalizedSets = normalizeSets(nextSets, formatKeyToSave);
+        const nextComputed = computeMatchScoreFromSets(normalizedSets, formatKeyToSave);
 
         const nextStoredScore = saveStoredMatchScore(match.id, {
             formatKey: formatKeyToSave,
             sets: normalizedSets,
+            scoreA: nextComputed.scoreA,
+            scoreB: nextComputed.scoreB,
+            pointsA: nextComputed.pointsA,
+            pointsB: nextComputed.pointsB,
+            isComplete: nextComputed.isComplete,
         });
 
         setStoredScore(nextStoredScore);
 
-        const nextComputed = computeMatchScoreFromSets(normalizedSets, formatKeyToSave);
+        const metadata = {
+            formatKey: formatKeyToSave,
+            sets: normalizedSets,
+            pointsA: nextComputed.pointsA,
+            pointsB: nextComputed.pointsB,
+            isComplete: nextComputed.isComplete,
+        };
 
-        callParentScoreChange(
-            onScoreChange,
-            nextComputed.scoreA,
-            nextComputed.scoreB,
-            {
-                formatKey: formatKeyToSave,
-                sets: normalizedSets,
-                pointsA: nextComputed.pointsA,
-                pointsB: nextComputed.pointsB,
-                isComplete: nextComputed.isComplete,
-            }
-        );
+        callParentScoreChange(onScoreChange, nextComputed.scoreA, nextComputed.scoreB, metadata);
+
+        notifyScoreChanged(match.id, {
+            scoreA: nextComputed.scoreA,
+            scoreB: nextComputed.scoreB,
+            ...metadata,
+        });
     }
 
     function handleSetScoreChange(index, field, value) {
@@ -245,10 +278,7 @@ function MatchScoreEditor(props) {
 
         const nextSets = sets.map((set, setIndex) =>
             setIndex === index
-                ? {
-                    ...set,
-                    [field]: normalizeScoreValue(value),
-                }
+                ? { ...set, [field]: normalizeScoreValue(value) }
                 : set
         );
 
@@ -260,12 +290,18 @@ function MatchScoreEditor(props) {
 
         removeStoredMatchScore(match.id);
         setStoredScore(null);
+        lastHydratedSignatureRef.current = '';
 
-        callParentScoreChange(onScoreChange, '', '', {
+        const metadata = {
             formatKey: globalFormatKey,
             sets: buildEmptySets(globalFormatKey),
+            pointsA: 0,
+            pointsB: 0,
             isComplete: false,
-        });
+        };
+
+        callParentScoreChange(onScoreChange, '', '', metadata);
+        notifyScoreChanged(match.id, { scoreA: '', scoreB: '', ...metadata });
     }
 
     return (
@@ -279,15 +315,7 @@ function MatchScoreEditor(props) {
                         : 'Score à saisir'}
                 </span>
 
-                <button
-                    type="button"
-                    className="small-btn"
-                    onClick={handleReset}
-                    disabled={disabled}
-                    title="Effacer le score et laisser ce match suivre le format global actuel"
-                >
-                    Reset
-                </button>
+
             </div>
 
             <p className="match-format-lock-note">
