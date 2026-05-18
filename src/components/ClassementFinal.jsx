@@ -1,65 +1,18 @@
+function getRankingPositionLabel(row, index) {
+    if (!row?.position) return index + 1;
+    return row.isExAequo ? `${row.position} ex æquo` : row.position;
+}
+
+function formatSetDiff(row) {
+    const setDiff = Number(row?.setDiff || 0);
+    return setDiff > 0 ? `+${setDiff}` : String(setDiff);
+}
 
 function ClassementFinal({ ctx }) {
     const {
-        activePool,
-        activeTab,
-        allTeams,
-        baseTeams,
-        combinedPointsRanking,
-        courtCount,
-        courtLabels,
-        displayBaseTeams,
-        displayCourtLabel,
-        displayMatchCourtLabel,
-        editingBaseDraft,
-        editingBaseTeamId,
-        editingMatchCourtId,
-        finalOnlyPointsRanking,
-        finalOptionGroups,
         finalRanking,
         formatRank,
         formatSigned,
-        getDisplayTeamNumber,
-        getTeamLabelById,
-        getTeamNameById,
-        globalPlanning,
-        handleAddManualBaseTeam,
-        handleAddSerpentinRow,
-        handleAutoFillSerpentin,
-        handleAutoQuarterDraw,
-        handleBaseDraftChange,
-        handleCancelBaseEdit,
-        handleChangeSerpentinValue,
-        handleDeleteBaseTeam,
-        handleDeletePool,
-        handleDeleteSerpentinRow,
-        handleFinalMatchScore,
-        handleMatchCourtOverrideChange,
-        handleMatchScoreChange,
-        handleNewBaseDraftChange,
-        handleQuarterTeamChange,
-        handleSaveBaseEdit,
-        handleSerpentinDragEnd,
-        handleStartBaseEdit,
-        handleSwapPlayersInDraft,
-        handleToggleQuarterPlacement,
-        handleToggleSeedTeam,
-        handleToggleThirdPlace,
-        newBaseDraft,
-        playableTeams,
-        pools,
-        rankedPools,
-        ranking,
-        safeFinalStage,
-        seedTeamIds,
-        seedTeamNumberById,
-        seedTeams,
-        selectedQuarterTeamIds,
-        selectedSerpentinTeamIds,
-        sensors,
-        serpentin,
-        setEditingMatchCourtId,
-
     } = ctx;
 
     return (
@@ -74,6 +27,7 @@ function ClassementFinal({ ctx }) {
                 • <strong>J</strong> : matchs joués<br />
                 • <strong>V</strong> : victoires<br />
                 • <strong>D</strong> : défaites<br />
+                • <strong>S</strong> : différence de sets gagnés / perdus<br />
                 • <strong>PF</strong> : points marqués<br />
                 • <strong>PA</strong> : points encaissés<br />
                 • <strong>Diff</strong> : différence de points (PF - PA)<br />
@@ -90,6 +44,7 @@ function ClassementFinal({ ctx }) {
                         <th>J</th>
                         <th>V</th>
                         <th>D</th>
+                        <th>S</th>
                         <th>PF</th>
                         <th>PA</th>
                         <th>Diff</th>
@@ -99,17 +54,18 @@ function ClassementFinal({ ctx }) {
                     <tbody>
                     {finalRanking.length === 0 ? (
                         <tr>
-                            <td colSpan="10">Aucun classement final disponible pour le moment.</td>
+                            <td colSpan="11">Aucun classement final disponible pour le moment.</td>
                         </tr>
                     ) : (
-                        finalRanking.map((row) => (
-                            <tr key={`${row.position}-${row.teamId}`}>
-                                <td>{row.position}</td>
+                        finalRanking.map((row, index) => (
+                            <tr key={`${row.position || index + 1}-${row.teamId}`}>
+                                <td>{getRankingPositionLabel(row, index)}</td>
                                 <td>{row.teamName}</td>
                                 <td>{row.cumulativeRank ? formatRank(row.cumulativeRank) : ''}</td>
                                 <td>{row.played || 0}</td>
                                 <td>{row.wins || 0}</td>
                                 <td>{row.losses || 0}</td>
+                                <td>{formatSetDiff(row)}</td>
                                 <td>{row.pointsFor || 0}</td>
                                 <td>{row.pointsAgainst || 0}</td>
                                 <td>{formatSigned(row.diff || 0)}</td>

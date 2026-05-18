@@ -3,6 +3,12 @@ import { FaCog } from 'react-icons/fa';
 import { getWinner } from '../utils/tournament';
 import MatchScoreEditor from './MatchScoreEditor.jsx';
 import { getStoredMatchScore } from '../utils/matchScoreStorage';
+import { calculateFftMatchStats } from '../utils/fftScoring.js';
+
+function getRankLabel(team, index) {
+    if (!team?.position) return index + 1;
+    return team.isExAequo ? String(team.position) + ' ex æquo' : team.position;
+}
 
 function isFilledRankingScore(value) {
     return value !== '' && value !== null && value !== undefined;
@@ -25,7 +31,10 @@ function computeStoredSetScoreForRanking(scoreDetail = {}) {
 
     let wonA = 0;
     let wonB = 0;
-    const requiredSets = scoreDetail.formatKey === 'D1' || scoreDetail.formatKey === 'D2' || scoreDetail.formatKey === 'E' ? 1 : 2;
+    const requiredSets =
+        scoreDetail.formatKey === 'D1' || scoreDetail.formatKey === 'D2' || scoreDetail.formatKey === 'E'
+            ? 1
+            : 2;
 
     for (const set of scoreDetail.sets) {
         if (!isFilledRankingScore(set?.scoreA) || !isFilledRankingScore(set?.scoreB)) continue;
@@ -76,6 +85,21 @@ function hydratePoolMatchesForRanking(matches = []) {
     return (matches || []).map(hydrateMatchForRanking);
 }
 
+function getMatchDisplayStats(match) {
+    const stats = calculateFftMatchStats(match);
+
+    if (!stats.isComplete) {
+        return {
+            diffA: '',
+            diffB: '',
+        };
+    }
+
+    return {
+        diffA: stats.fftGameDiffA,
+        diffB: stats.fftGameDiffB,
+    };
+}
 
 function sortMatchesForDisplay(matches) {
     return [...(matches || [])].sort((a, b) => {
@@ -88,54 +112,6 @@ function Poule({ ctx }) {
     const [matchScoreRefreshKey, setMatchScoreRefreshKey] = useState(0);
     void matchScoreRefreshKey;
 
-
-function getDisplayPointsDiff(match) {
-    const detail = match?.scoreDetail || {};
-    const pointsA = Number(detail.pointsA);
-    const pointsB = Number(detail.pointsB);
-
-    if (Number.isFinite(pointsA) && Number.isFinite(pointsB) && (pointsA !== 0 || pointsB !== 0)) {
-        return {
-            diffA: pointsA - pointsB,
-            diffB: pointsB - pointsA,
-        };
-    }
-
-    if (Array.isArray(detail.sets)) {
-        const points = detail.sets.reduce(
-            (acc, set) => {
-                if (!isFilledRankingScore(set?.scoreA) || !isFilledRankingScore(set?.scoreB)) {
-                    return acc;
-                }
-
-                const scoreA = Number(set.scoreA);
-                const scoreB = Number(set.scoreB);
-
-                if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) {
-                    return acc;
-                }
-
-                return {
-                    pointsA: acc.pointsA + scoreA,
-                    pointsB: acc.pointsB + scoreB,
-                };
-            },
-            { pointsA: 0, pointsB: 0 }
-        );
-
-        if (points.pointsA !== 0 || points.pointsB !== 0) {
-            return {
-                diffA: points.pointsA - points.pointsB,
-                diffB: points.pointsB - points.pointsA,
-            };
-        }
-    }
-
-    return {
-        diffA: '',
-        diffB: '',
-    };
-}
     useEffect(() => {
         const handleMatchScoreChangeEvent = () => {
             setMatchScoreRefreshKey((value) => value + 1);
@@ -147,7 +123,6 @@ function getDisplayPointsDiff(match) {
             window.removeEventListener('padelingo:match-score-change', handleMatchScoreChangeEvent);
         };
     }, []);
-
 
     const {
         activePool,
@@ -178,6 +153,8 @@ function getDisplayPointsDiff(match) {
         );
     }
 
+    const displayMatches = sortMatchesForDisplay(hydratePoolMatchesForRanking(activePool.matches));
+
     return (
         <main className="layout">
             <section className="card">
@@ -207,7 +184,8 @@ function getDisplayPointsDiff(match) {
                 <h2>{activePool.name} — Matchs</h2>
                 <p className="note">
                     Les formats A1 à E sont pris en charge. Le score global du match est calculé automatiquement
-                    en sets gagnés : 2-0, 2-1, 1-2, etc.
+                    en sets gagnés. Pour plus de lisibilité, l’affichage montre directement la différence de sets :
+                    +2 / -2, +1 / -1, etc.
                 </p>
 
                 {activePool.matches.length === 0 ? (
@@ -229,18 +207,27 @@ function getDisplayPointsDiff(match) {
                             </tr>
                             </thead>
                             <tbody>
-                            {sortMatchesForDisplay(activePool.matches).map((match) => {
+                            {displayMatches.map((match) => {
                                 const winner = getWinner(match);
-                                const { diffA, diffB } = getDisplayPointsDiff(match);
+                                const { diffA, diffB } = getMatchDisplayStats(match);
 
                                 return (
                                     <tr key={match.id}>
                                         <td>{match.round || 1}</td>
+
                                         <td className={winner === 'A' ? 'winner-text' : ''}>
                                             {getTeamNameById(match.teamAId)}
                                         </td>
+
                                         <td>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.4rem',
+                                                    flexWrap: 'wrap',
+                                                }}
+                                            >
                                                 <strong>{displayMatchCourtLabel(match)}</strong>
                                                 <button
                                                     type="button"
@@ -286,6 +273,7 @@ function getDisplayPointsDiff(match) {
                                                 </div>
                                             )}
                                         </td>
+
                                         <td>
                                             <MatchScoreEditor
                                                 match={match}
@@ -304,9 +292,11 @@ function getDisplayPointsDiff(match) {
                                                 }
                                             />
                                         </td>
+
                                         <td className={winner === 'B' ? 'winner-text' : ''}>
                                             {getTeamNameById(match.teamBId)}
                                         </td>
+
                                         <td>{diffA === '' ? '' : diffA > 0 ? `+${diffA}` : diffA}</td>
                                         <td>{diffB === '' ? '' : diffB > 0 ? `+${diffB}` : diffB}</td>
                                     </tr>
@@ -330,6 +320,7 @@ function getDisplayPointsDiff(match) {
                             <th>J</th>
                             <th>V</th>
                             <th>D</th>
+                            <th>S</th>
                             <th>PF</th>
                             <th>PA</th>
                             <th>Diff</th>
@@ -339,17 +330,18 @@ function getDisplayPointsDiff(match) {
                         <tbody>
                         {ranking.length === 0 ? (
                             <tr>
-                                <td colSpan="10">Aucun classement disponible pour le moment.</td>
+                                <td colSpan="11">Aucun classement disponible pour le moment.</td>
                             </tr>
                         ) : (
                             ranking.map((team, index) => (
                                 <tr key={team.teamId}>
-                                    <td>{index + 1}</td>
+                                    <td>{getRankLabel(team, index)}</td>
                                     <td>{team.teamName}</td>
                                     <td>{team.cumulativeRank ? formatRank(team.cumulativeRank) : ''}</td>
                                     <td>{team.played}</td>
                                     <td>{team.wins}</td>
                                     <td>{team.losses}</td>
+                                    <td>{team.setDiff > 0 ? `+${team.setDiff}` : team.setDiff || 0}</td>
                                     <td>{team.pointsFor}</td>
                                     <td>{team.pointsAgainst}</td>
                                     <td>{team.diff > 0 ? `+${team.diff}` : team.diff}</td>

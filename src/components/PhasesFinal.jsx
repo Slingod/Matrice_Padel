@@ -30,7 +30,8 @@ function RankingTable({ title, rows, formatRank }) {
                         <th>J</th>
                         <th>V</th>
                         <th>D</th>
-                        <th>PF</th>
+                        <th>S</th>
+<th>PF</th>
                         <th>PA</th>
                         <th>Diff</th>
                         <th>Total</th>
@@ -39,7 +40,7 @@ function RankingTable({ title, rows, formatRank }) {
                     <tbody>
                     {(rows || []).length === 0 ? (
                         <tr>
-                            <td colSpan="10">Aucune donnée disponible pour le moment.</td>
+                            <td colSpan="11">Aucune donnée disponible pour le moment.</td>
                         </tr>
                     ) : (
                         rows.map((team, index) => (
@@ -307,18 +308,6 @@ function PhasesFinal({ ctx }) {
                     </div>
                 </div>
             ) : null}
-
-            <RankingTable
-                title="Statistiques phase finale uniquement"
-                rows={finalOnlyPointsRanking}
-                formatRank={formatRank}
-            />
-
-            <RankingTable
-                title="Statistiques globales poules + phase finale"
-                rows={combinedPointsRanking}
-                formatRank={formatRank}
-            />
         </section>
     );
 }

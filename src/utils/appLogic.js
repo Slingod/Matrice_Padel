@@ -1,5 +1,6 @@
 import { createSerpentinEntry, syncMatchesPreserveScores } from './tournament';
 import { createEmptyFinalStage } from './finalStage';
+import { calculateFftMatchStats } from './fftScoring.js';
 
 export function syncPoolsFromSerpentin(baseTeams, previousPools, serpentinMap) {
     const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
@@ -23,7 +24,7 @@ export function syncPoolsFromSerpentin(baseTeams, previousPools, serpentinMap) {
     });
 }
 
-export function createCombinedStatRow(team) {
+export function createCombinedStatRow(team = {}) {
     return {
         teamId: team.id,
         teamName: team.name,
@@ -31,53 +32,70 @@ export function createCombinedStatRow(team) {
         played: 0,
         wins: 0,
         losses: 0,
+        setsFor: 0,
+        setsAgainst: 0,
+        setDiff: 0,
+        useSetPriority: false,
         pointsFor: 0,
         pointsAgainst: 0,
         diff: 0,
+        fftGameDiff: 0,
         totalScore: 0,
     };
 }
 
-export function applyMatchToStats(statMap, teamAId, teamBId, scoreAValue, scoreBValue) {
-    const scoreA = Number(scoreAValue);
-    const scoreB = Number(scoreBValue);
+export function applyMatchToStats(statMap, matchOrTeamAId, teamBId = null, scoreA = '', scoreB = '') {
+    const isMatchObject = typeof matchOrTeamAId === 'object' && matchOrTeamAId !== null;
+    const match = isMatchObject
+        ? matchOrTeamAId
+        : {
+            teamAId: matchOrTeamAId,
+            teamBId,
+            scoreA,
+            scoreB,
+        };
 
-    const isValid =
-        teamAId &&
-        teamBId &&
-        scoreAValue !== '' &&
-        scoreBValue !== '' &&
-        Number.isFinite(scoreA) &&
-        Number.isFinite(scoreB);
+    const stats = calculateFftMatchStats(match);
 
-    if (!isValid) return;
+    if (!stats.isComplete || !match.teamAId || !match.teamBId) return;
 
-    const teamA = statMap.get(teamAId);
-    const teamB = statMap.get(teamBId);
+    const teamA = statMap.get(match.teamAId);
+    const teamB = statMap.get(match.teamBId);
 
     if (!teamA || !teamB) return;
 
     teamA.played += 1;
     teamB.played += 1;
 
-    teamA.pointsFor += scoreA;
-    teamA.pointsAgainst += scoreB;
-    teamB.pointsFor += scoreB;
-    teamB.pointsAgainst += scoreA;
+    teamA.setsFor = (teamA.setsFor || 0) + stats.setsA;
+    teamA.setsAgainst = (teamA.setsAgainst || 0) + stats.setsB;
+    teamB.setsFor = (teamB.setsFor || 0) + stats.setsB;
+    teamB.setsAgainst = (teamB.setsAgainst || 0) + stats.setsA;
 
-    const diffA = scoreA - scoreB;
-    const diffB = scoreB - scoreA;
+    teamA.setDiff = (teamA.setDiff || 0) + stats.setDiffA;
+    teamB.setDiff = (teamB.setDiff || 0) + stats.setDiffB;
 
-    teamA.diff += diffA;
-    teamB.diff += diffB;
+    teamA.useSetPriority = Boolean(teamA.useSetPriority || stats.useSetPriority);
+    teamB.useSetPriority = Boolean(teamB.useSetPriority || stats.useSetPriority);
 
-    teamA.totalScore += diffA;
-    teamB.totalScore += diffB;
+    teamA.pointsFor += stats.fftGamesA;
+    teamA.pointsAgainst += stats.fftGamesB;
+    teamB.pointsFor += stats.fftGamesB;
+    teamB.pointsAgainst += stats.fftGamesA;
 
-    if (scoreA > scoreB) {
+    teamA.diff += stats.fftGameDiffA;
+    teamB.diff += stats.fftGameDiffB;
+
+    teamA.fftGameDiff = (teamA.fftGameDiff || 0) + stats.fftGameDiffA;
+    teamB.fftGameDiff = (teamB.fftGameDiff || 0) + stats.fftGameDiffB;
+
+    teamA.totalScore += stats.fftGameDiffA;
+    teamB.totalScore += stats.fftGameDiffB;
+
+    if (stats.winner === 'A') {
         teamA.wins += 1;
         teamB.losses += 1;
-    } else if (scoreB > scoreA) {
+    } else if (stats.winner === 'B') {
         teamB.wins += 1;
         teamA.losses += 1;
     }

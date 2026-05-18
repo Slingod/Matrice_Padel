@@ -1,3 +1,4 @@
+import { calculateFftMatchStats } from './fftScoring.js';
 function uid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -87,7 +88,13 @@ function sanitizeMatch(match, fallbackLabel = '') {
         teamBId: match?.teamBId || '',
         scoreA: match?.scoreA ?? '',
         scoreB: match?.scoreB ?? '',
-        scoreDetail: match?.scoreDetail || null,
+        scoreDetail: match?.scoreDetail
+            ? {
+                ...match.scoreDetail,
+                formatKey: sanitizeMatchFormatKey(match.scoreDetail.formatKey || match.scoreDetail.matchFormatKey || formatKey),
+                format: match.scoreDetail.format || sanitizeMatchFormatKey(match.scoreDetail.formatKey || match.scoreDetail.matchFormatKey || formatKey),
+            }
+            : null,
         formatKey,
         matchFormatKey: formatKey,
     };
@@ -446,6 +453,10 @@ function buildStageStatMap(allTeams, stage) {
                 finalPlayed: 0,
                 finalWins: 0,
                 finalLosses: 0,
+                finalSetsFor: 0,
+                finalSetsAgainst: 0,
+                finalSetDiff: 0,
+                finalUseSetPriority: false,
                 finalPointsFor: 0,
                 finalPointsAgainst: 0,
                 finalDiff: 0,
@@ -455,44 +466,44 @@ function buildStageStatMap(allTeams, stage) {
     );
 
     getFinalStageMatchesForStats(safeStage).forEach((match) => {
-        const scoreA = Number(match.scoreA);
-        const scoreB = Number(match.scoreB);
+        const stats = calculateFftMatchStats(match);
 
-        const valid =
-            match.teamAId &&
-            match.teamBId &&
-            match.scoreA !== '' &&
-            match.scoreB !== '' &&
-            Number.isFinite(scoreA) &&
-            Number.isFinite(scoreB);
-
-        if (!valid) return;
+        if (!stats.isComplete || !match.teamAId || !match.teamBId) return;
 
         const teamA = statMap.get(match.teamAId);
         const teamB = statMap.get(match.teamBId);
+
         if (!teamA || !teamB) return;
 
         teamA.finalPlayed += 1;
         teamB.finalPlayed += 1;
 
-        teamA.finalPointsFor += scoreA;
-        teamA.finalPointsAgainst += scoreB;
-        teamB.finalPointsFor += scoreB;
-        teamB.finalPointsAgainst += scoreA;
+        teamA.finalSetsFor += stats.setsA;
+        teamA.finalSetsAgainst += stats.setsB;
+        teamB.finalSetsFor += stats.setsB;
+        teamB.finalSetsAgainst += stats.setsA;
 
-        const diffA = scoreA - scoreB;
-        const diffB = scoreB - scoreA;
+        teamA.finalSetDiff += stats.setDiffA;
+        teamB.finalSetDiff += stats.setDiffB;
 
-        teamA.finalDiff += diffA;
-        teamB.finalDiff += diffB;
+        teamA.finalUseSetPriority = Boolean(teamA.finalUseSetPriority || stats.useSetPriority);
+        teamB.finalUseSetPriority = Boolean(teamB.finalUseSetPriority || stats.useSetPriority);
 
-        teamA.finalTotal += diffA;
-        teamB.finalTotal += diffB;
+        teamA.finalPointsFor += stats.fftGamesA;
+        teamA.finalPointsAgainst += stats.fftGamesB;
+        teamB.finalPointsFor += stats.fftGamesB;
+        teamB.finalPointsAgainst += stats.fftGamesA;
 
-        if (scoreA > scoreB) {
+        teamA.finalDiff += stats.fftGameDiffA;
+        teamB.finalDiff += stats.fftGameDiffB;
+
+        teamA.finalTotal += stats.fftGameDiffA;
+        teamB.finalTotal += stats.fftGameDiffB;
+
+        if (stats.winner === 'A') {
             teamA.finalWins += 1;
             teamB.finalLosses += 1;
-        } else if (scoreB > scoreA) {
+        } else if (stats.winner === 'B') {
             teamB.finalWins += 1;
             teamA.finalLosses += 1;
         }
@@ -512,6 +523,9 @@ function buildPoolStatMap(rankedPools = []) {
                 poolPlayed: row.played || 0,
                 poolWins: row.wins || 0,
                 poolLosses: row.losses || 0,
+                poolSetsFor: row.setsFor || 0,
+                poolSetsAgainst: row.setsAgainst || 0,
+                poolSetDiff: row.setDiff || 0,
                 poolPointsFor: row.pointsFor || 0,
                 poolPointsAgainst: row.pointsAgainst || 0,
                 poolDiff: row.diff || 0,
@@ -531,6 +545,9 @@ function getPoolStats(poolStatMap, teamId) {
             poolPlayed: 0,
             poolWins: 0,
             poolLosses: 0,
+            poolSetsFor: 0,
+            poolSetsAgainst: 0,
+            poolSetDiff: 0,
             poolPointsFor: 0,
             poolPointsAgainst: 0,
             poolDiff: 0,
@@ -547,6 +564,11 @@ function buildRankingRow(teamId, position, teamMap, statMap, poolStatMap) {
     const played = (poolStats.poolPlayed || 0) + (finalStats.finalPlayed || 0);
     const wins = (poolStats.poolWins || 0) + (finalStats.finalWins || 0);
     const losses = (poolStats.poolLosses || 0) + (finalStats.finalLosses || 0);
+
+    const setsFor = (poolStats.poolSetsFor || 0) + (finalStats.finalSetsFor || 0);
+    const setsAgainst = (poolStats.poolSetsAgainst || 0) + (finalStats.finalSetsAgainst || 0);
+    const setDiff = (poolStats.poolSetDiff || 0) + (finalStats.finalSetDiff || 0);
+
     const pointsFor = (poolStats.poolPointsFor || 0) + (finalStats.finalPointsFor || 0);
     const pointsAgainst = (poolStats.poolPointsAgainst || 0) + (finalStats.finalPointsAgainst || 0);
     const diff = pointsFor - pointsAgainst;
@@ -561,18 +583,25 @@ function buildRankingRow(teamId, position, teamMap, statMap, poolStatMap) {
         played,
         wins,
         losses,
+        setsFor,
+        setsAgainst,
+        setDiff,
+        useSetPriority: Boolean(poolStats.poolUseSetPriority || finalStats.finalUseSetPriority),
         pointsFor,
         pointsAgainst,
         diff,
+        fftGameDiff: diff,
         totalScore: diff,
     };
 }
 
 function sortByStageTieBreak(a, b) {
     if ((b.finalWins || 0) !== (a.finalWins || 0)) return (b.finalWins || 0) - (a.finalWins || 0);
+    if ((b.finalSetDiff || 0) !== (a.finalSetDiff || 0)) return (b.finalSetDiff || 0) - (a.finalSetDiff || 0);
     if ((b.finalDiff || 0) !== (a.finalDiff || 0)) return (b.finalDiff || 0) - (a.finalDiff || 0);
     if ((b.finalPointsFor || 0) !== (a.finalPointsFor || 0)) return (b.finalPointsFor || 0) - (a.finalPointsFor || 0);
     if ((b.poolWins || 0) !== (a.poolWins || 0)) return (b.poolWins || 0) - (a.poolWins || 0);
+    if ((b.poolSetDiff || 0) !== (a.poolSetDiff || 0)) return (b.poolSetDiff || 0) - (a.poolSetDiff || 0);
     if ((b.poolDiff || 0) !== (a.poolDiff || 0)) return (b.poolDiff || 0) - (a.poolDiff || 0);
     if ((b.poolPointsFor || 0) !== (a.poolPointsFor || 0)) return (b.poolPointsFor || 0) - (a.poolPointsFor || 0);
     return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
@@ -580,6 +609,7 @@ function sortByStageTieBreak(a, b) {
 
 function sortRemainingPoolTeams(a, b) {
     if ((b.poolWins || 0) !== (a.poolWins || 0)) return (b.poolWins || 0) - (a.poolWins || 0);
+    if ((b.poolSetDiff || 0) !== (a.poolSetDiff || 0)) return (b.poolSetDiff || 0) - (a.poolSetDiff || 0);
     if ((b.poolDiff || 0) !== (a.poolDiff || 0)) return (b.poolDiff || 0) - (a.poolDiff || 0);
     if ((b.poolPointsFor || 0) !== (a.poolPointsFor || 0)) return (b.poolPointsFor || 0) - (a.poolPointsFor || 0);
     if ((a.poolRank || 999) !== (b.poolRank || 999)) return (a.poolRank || 999) - (b.poolRank || 999);
@@ -604,85 +634,115 @@ export function buildFinalRanking(stage, rankedPools = [], allTeams = []) {
     const poolStatMap = buildPoolStatMap(rankedPools);
     const teamMap = new Map((allTeams || []).map((team) => [team.id, team]));
 
-    const finalWinner = getWinnerTeamId(safeStage.final);
-    const finalLoser = getLoserTeamId(safeStage.final);
-
     const ranking = [];
     const seen = new Set();
 
-    const pushRankedTeam = (position, teamId) => {
-        if (!teamId || seen.has(teamId)) return;
+    const pushRankedTeam = (position, teamId, source = '') => {
+        if (!teamId || seen.has(teamId)) return false;
+
         seen.add(teamId);
-        ranking.push(buildRankingRow(teamId, position, teamMap, statMap, poolStatMap));
+        ranking.push({
+            ...buildRankingRow(teamId, position, teamMap, statMap, poolStatMap),
+            position,
+            rankingSource: source,
+        });
+
+        return true;
     };
 
-    const makeComparableRow = (teamId) => buildRankingRow(teamId, 0, teamMap, statMap, poolStatMap);
+    const getLosersWithEliminators = (matches = []) =>
+        (matches || [])
+            .map((match, matchIndex) => ({
+                teamId: getLoserTeamId(match),
+                eliminatorId: getWinnerTeamId(match),
+                matchIndex,
+            }))
+            .filter((item) => item.teamId && item.eliminatorId && !seen.has(item.teamId));
 
-    pushRankedTeam(1, finalWinner);
-    pushRankedTeam(2, finalLoser);
+    const buildComparableRow = (teamId) =>
+        buildRankingRow(teamId, 0, teamMap, statMap, poolStatMap);
 
-    const semiLosers = safeStage.semiFinals.map(getLoserTeamId).filter(Boolean).map(makeComparableRow);
+    const sortSameRoundBySportCriteria = (items = []) =>
+        [...items].sort((a, b) => {
+            const rowA = buildComparableRow(a.teamId);
+            const rowB = buildComparableRow(b.teamId);
+
+            if ((rowB.wins || 0) !== (rowA.wins || 0)) return (rowB.wins || 0) - (rowA.wins || 0);
+            if ((rowB.setDiff || 0) !== (rowA.setDiff || 0)) return (rowB.setDiff || 0) - (rowA.setDiff || 0);
+            if ((rowB.diff || 0) !== (rowA.diff || 0)) return (rowB.diff || 0) - (rowA.diff || 0);
+            if ((rowB.pointsFor || 0) !== (rowA.pointsFor || 0)) return (rowB.pointsFor || 0) - (rowA.pointsFor || 0);
+            if ((rowA.pointsAgainst || 0) !== (rowB.pointsAgainst || 0)) return (rowA.pointsAgainst || 0) - (rowB.pointsAgainst || 0);
+
+            if ((rowA.poolRank || 999) !== (rowB.poolRank || 999)) {
+                return (rowA.poolRank || 999) - (rowB.poolRank || 999);
+            }
+
+            if ((rowA.cumulativeRank || 999999999) !== (rowB.cumulativeRank || 999999999)) {
+                return (rowA.cumulativeRank || 999999999) - (rowB.cumulativeRank || 999999999);
+            }
+
+            return (a.matchIndex || 0) - (b.matchIndex || 0);
+        });
+
+    const finalWinner = getWinnerTeamId(safeStage.final);
+    const finalLoser = getLoserTeamId(safeStage.final);
+
+    pushRankedTeam(1, finalWinner, 'final-winner');
+    pushRankedTeam(2, finalLoser, 'final-loser');
 
     if (safeStage.settings.enableThirdPlaceMatch) {
-        pushRankedTeam(3, getWinnerTeamId(safeStage.thirdPlace));
-        pushRankedTeam(4, getLoserTeamId(safeStage.thirdPlace));
+        pushRankedTeam(3, getWinnerTeamId(safeStage.thirdPlace), 'third-place-winner');
+        pushRankedTeam(4, getLoserTeamId(safeStage.thirdPlace), 'third-place-loser');
     } else {
-        const sortedSemiLosers = [...semiLosers].sort(sortByStageTieBreak);
-        pushRankedTeam(3, sortedSemiLosers[0]?.teamId);
-        pushRankedTeam(4, sortedSemiLosers[1]?.teamId);
+        sortSameRoundBySportCriteria(getLosersWithEliminators(safeStage.semiFinals)).forEach((item, index) => {
+            pushRankedTeam(3 + index, item.teamId, 'semi-final-loser');
+        });
     }
 
-    let nextPosition = 5;
+    let nextPosition = Math.max(5, ranking.length + 1);
 
     if (entryRound !== 'semi') {
-        const qfLosers = safeStage.quarterFinals.map(getLoserTeamId).filter(Boolean).map(makeComparableRow);
-
         if (safeStage.settings.enablePlacement5to8) {
-            pushRankedTeam(5, getWinnerTeamId(safeStage.placement5to8Finals.place5));
-            pushRankedTeam(6, getLoserTeamId(safeStage.placement5to8Finals.place5));
-            pushRankedTeam(7, getWinnerTeamId(safeStage.placement5to8Finals.place7));
-            pushRankedTeam(8, getLoserTeamId(safeStage.placement5to8Finals.place7));
+            pushRankedTeam(5, getWinnerTeamId(safeStage.placement5to8Finals.place5), 'place-5-winner');
+            pushRankedTeam(6, getLoserTeamId(safeStage.placement5to8Finals.place5), 'place-5-loser');
+            pushRankedTeam(7, getWinnerTeamId(safeStage.placement5to8Finals.place7), 'place-7-winner');
+            pushRankedTeam(8, getLoserTeamId(safeStage.placement5to8Finals.place7), 'place-7-loser');
             nextPosition = 9;
         } else {
-            nextPosition = pushSortedLosers({
-                ranking,
-                seen,
-                losers: qfLosers,
-                startPosition: 5,
-                teamMap,
-                statMap,
-                poolStatMap,
+            sortSameRoundBySportCriteria(getLosersWithEliminators(safeStage.quarterFinals)).forEach((item, index) => {
+                pushRankedTeam(5 + index, item.teamId, 'quarter-final-loser');
             });
+            nextPosition = Math.max(9, ranking.length + 1);
         }
     }
 
     if (entryRound === 'round16') {
-        const r16Losers = safeStage.roundOf16.map(getLoserTeamId).filter(Boolean).map(makeComparableRow);
-        nextPosition = pushSortedLosers({
-            ranking,
-            seen,
-            losers: r16Losers,
-            startPosition: Math.max(nextPosition, ranking.length + 1),
-            teamMap,
-            statMap,
-            poolStatMap,
+        sortSameRoundBySportCriteria(getLosersWithEliminators(safeStage.roundOf16)).forEach((item, index) => {
+            pushRankedTeam(nextPosition + index, item.teamId, 'round-16-loser');
         });
+        nextPosition = Math.max(nextPosition, ranking.length + 1);
     }
 
     const remainingPoolTeams = [];
+
     rankedPools.forEach((pool) => {
         (pool.ranking || []).forEach((row) => {
-            if (!seen.has(row.teamId)) remainingPoolTeams.push(buildRankingRow(row.teamId, 0, teamMap, statMap, poolStatMap));
+            if (!row.teamId || seen.has(row.teamId)) return;
+            remainingPoolTeams.push(buildRankingRow(row.teamId, 0, teamMap, statMap, poolStatMap));
         });
     });
 
     remainingPoolTeams.sort(sortRemainingPoolTeams);
 
-    nextPosition = Math.max(nextPosition, ranking.length + 1);
     remainingPoolTeams.forEach((team) => {
-        if (seen.has(team.teamId)) return;
+        if (!team.teamId || seen.has(team.teamId)) return;
+
         seen.add(team.teamId);
-        ranking.push({ ...team, position: nextPosition });
+        ranking.push({
+            ...team,
+            position: nextPosition,
+            rankingSource: 'pool-ranking',
+        });
         nextPosition += 1;
     });
 
@@ -691,9 +751,19 @@ export function buildFinalRanking(stage, rankedPools = [], allTeams = []) {
         .sort((a, b) => (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999));
 
     missingTeams.forEach((team) => {
-        ranking.push(buildRankingRow(team.id, nextPosition, teamMap, statMap, poolStatMap));
+        ranking.push({
+            ...buildRankingRow(team.id, nextPosition, teamMap, statMap, poolStatMap),
+            position: nextPosition,
+            rankingSource: 'missing-team',
+        });
         nextPosition += 1;
     });
 
-    return ranking.sort((a, b) => a.position - b.position);
+    return ranking.sort((a, b) => {
+        if ((a.position || 999) !== (b.position || 999)) {
+            return (a.position || 999) - (b.position || 999);
+        }
+
+        return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
+    });
 }

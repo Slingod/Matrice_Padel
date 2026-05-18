@@ -23,6 +23,11 @@ function hasGlobalScore(match) {
     return isFilled(match?.scoreA) && isFilled(match?.scoreB);
 }
 
+function formatSignedValue(value) {
+    const number = Number(value) || 0;
+    return number > 0 ? `+${number}` : String(number);
+}
+
 function buildEmptySets(formatKey) {
     const format = getMatchFormat(formatKey);
 
@@ -89,11 +94,19 @@ function computeMatchScoreFromSets(sets, formatKey) {
     return {
         scoreA: isComplete ? String(wonA) : '',
         scoreB: isComplete ? String(wonB) : '',
+        setDiffA: isComplete ? wonA - wonB : 0,
+        setDiffB: isComplete ? wonB - wonA : 0,
         pointsA,
         pointsB,
         isComplete,
         format,
     };
+}
+
+function getSetDiffLabel(computed) {
+    if (!computed?.isComplete) return 'Score à saisir';
+
+    return `Sets : ${formatSignedValue(computed.setDiffA)} / ${formatSignedValue(computed.setDiffB)}`;
 }
 
 function notifyScoreChanged(matchId, payload) {
@@ -189,6 +202,7 @@ function MatchScoreEditor(props) {
     );
 
     const isLockedForThisMatch = matchHasRealScore;
+    const setDiffLabel = getSetDiffLabel(computed);
 
     useEffect(() => {
         if (!match?.id || disabled) return;
@@ -285,37 +299,20 @@ function MatchScoreEditor(props) {
         persistSets(nextSets);
     }
 
-    function handleReset() {
-        if (disabled || !match?.id) return;
-
-        removeStoredMatchScore(match.id);
-        setStoredScore(null);
-        lastHydratedSignatureRef.current = '';
-
-        const metadata = {
-            formatKey: globalFormatKey,
-            sets: buildEmptySets(globalFormatKey),
-            pointsA: 0,
-            pointsB: 0,
-            isComplete: false,
-        };
-
-        callParentScoreChange(onScoreChange, '', '', metadata);
-        notifyScoreChanged(match.id, { scoreA: '', scoreB: '', ...metadata });
-    }
-
     return (
         <div className="match-score-editor">
             <div className="match-score-editor-head">
                 <span className="match-format-badge">{format.key}</span>
 
-                <span className="match-score-summary">
-                    {computed.isComplete
-                        ? `${computed.scoreA} - ${computed.scoreB}`
-                        : 'Score à saisir'}
+                <span
+                    className={
+                        computed.isComplete
+                            ? 'match-set-diff-inline match-set-diff-inline-head'
+                            : 'match-score-summary'
+                    }
+                >
+                    {setDiffLabel}
                 </span>
-
-
             </div>
 
             <p className="match-format-lock-note">

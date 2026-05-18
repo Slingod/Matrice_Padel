@@ -45,6 +45,7 @@ import {
     syncPoolsFromSerpentin,
 } from '../utils/appLogic';
 import { DEFAULT_MATCH_FORMAT, getStoredMatchFormat, storeMatchFormat, setStoredMatchFormat, sanitizeMatchFormatKey } from '../utils/matchFormats';
+import { assignSharedRanks, compareFftRankingRows } from '../utils/fftScoring.js';
 
 export function useTournamentState() {
     const [matchFormatKey, setMatchFormatKey] = useState(() => getStoredMatchFormat());
@@ -255,17 +256,15 @@ export function useTournamentState() {
 
         pools.forEach((pool) => {
             pool.matches.forEach((match) => {
-                const statScores = getMatchStatScores(match);
-                applyMatchToStats(statMap, match.teamAId, match.teamBId, statScores.scoreA, statScores.scoreB);
+                applyMatchToStats(statMap, match);
             });
         });
 
         getFinalStageMatchesForStats(safeFinalStage).forEach((match) => {
-            const statScores = getMatchStatScores(match);
-                applyMatchToStats(statMap, match.teamAId, match.teamBId, statScores.scoreA, statScores.scoreB);
+            applyMatchToStats(statMap, match);
         });
 
-        return [...statMap.values()]
+        return assignSharedRanks([...statMap.values()]
             .filter(
                 (team) =>
                     team.played > 0 ||
@@ -273,23 +272,17 @@ export function useTournamentState() {
                     team.pointsAgainst > 0 ||
                     team.totalScore !== 0
             )
-            .sort((a, b) => {
-                if (b.wins !== a.wins) return b.wins - a.wins;
-                if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-                if (b.diff !== a.diff) return b.diff - a.diff;
-                return b.pointsFor - a.pointsFor;
-            });
+            .sort(compareFftRankingRows));
     }, [allTeams, pools, safeFinalStage]);
 
     const finalOnlyPointsRanking = useMemo(() => {
         const statMap = new Map(allTeams.map((team) => [team.id, createCombinedStatRow(team)]));
 
         getFinalStageMatchesForStats(safeFinalStage).forEach((match) => {
-            const statScores = getMatchStatScores(match);
-                applyMatchToStats(statMap, match.teamAId, match.teamBId, statScores.scoreA, statScores.scoreB);
+            applyMatchToStats(statMap, match);
         });
 
-        return [...statMap.values()]
+        return assignSharedRanks([...statMap.values()]
             .filter(
                 (team) =>
                     team.played > 0 ||
@@ -297,12 +290,7 @@ export function useTournamentState() {
                     team.pointsAgainst > 0 ||
                     team.totalScore !== 0
             )
-            .sort((a, b) => {
-                if (b.wins !== a.wins) return b.wins - a.wins;
-                if (b.diff !== a.diff) return b.diff - a.diff;
-                if (b.pointsFor !== a.pointsFor) return b.pointsFor - a.pointsFor;
-                return (a.cumulativeRank || 999999999) - (b.cumulativeRank || 999999999);
-            });
+            .sort(compareFftRankingRows));
     }, [allTeams, safeFinalStage]);
 
     const finalOptionGroups = useMemo(() => {
@@ -360,58 +348,7 @@ export function useTournamentState() {
     );
 
 
-    function getMatchStatScores(match) {
-        const detail = match?.scoreDetail || {};
 
-        const detailPointsA = Number(detail.pointsA);
-        const detailPointsB = Number(detail.pointsB);
-
-        if (
-            Number.isFinite(detailPointsA) &&
-            Number.isFinite(detailPointsB) &&
-            (detailPointsA !== 0 || detailPointsB !== 0)
-        ) {
-            return {
-                scoreA: String(detailPointsA),
-                scoreB: String(detailPointsB),
-            };
-        }
-
-        if (Array.isArray(detail.sets)) {
-            const points = detail.sets.reduce(
-                (acc, set) => {
-                    const rawA = set?.scoreA ?? set?.a;
-                    const rawB = set?.scoreB ?? set?.b;
-
-                    if (rawA === '' || rawA === null || rawA === undefined) return acc;
-                    if (rawB === '' || rawB === null || rawB === undefined) return acc;
-
-                    const scoreA = Number(rawA);
-                    const scoreB = Number(rawB);
-
-                    if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return acc;
-
-                    return {
-                        pointsA: acc.pointsA + scoreA,
-                        pointsB: acc.pointsB + scoreB,
-                    };
-                },
-                { pointsA: 0, pointsB: 0 }
-            );
-
-            if (points.pointsA !== 0 || points.pointsB !== 0) {
-                return {
-                    scoreA: String(points.pointsA),
-                    scoreB: String(points.pointsB),
-                };
-            }
-        }
-
-        return {
-            scoreA: match?.scoreA ?? '',
-            scoreB: match?.scoreB ?? '',
-        };
-    }
 
     function formatRank(value) {
         const number = Number(value) || 0;
@@ -992,13 +929,15 @@ export function useTournamentState() {
             courtCount,
             courtLabels,
             matchFormat: matchFormatKey,
+            scoringVersion: 'fft-v2-sets-priority',
+            savedSchemaVersion: 2,
         };
     }
 
     function applyTournamentState(nextState) {
         const nextMatchFormat = sanitizeMatchFormatKey(nextState.matchFormat || nextState.format || DEFAULT_MATCH_FORMAT);
         setMatchFormatKey(nextMatchFormat);
-setBaseTeams(nextState.baseTeams || []);
+        setBaseTeams(nextState.baseTeams || []);
         setPools(nextState.pools || []);
         setSerpentin(nextState.serpentin || {});
         setActiveTab(nextState.activeTab || 'base');

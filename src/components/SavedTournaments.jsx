@@ -1,6 +1,27 @@
 import { FaFolderOpen, FaPlus, FaSave, FaTrash } from 'react-icons/fa';
 import { formatSaveDate } from '../utils/persistence';
 
+function countScoredPoolMatches(state) {
+    return (state?.pools || []).reduce((total, pool) => (
+        total + (pool.matches || []).filter((match) => match.scoreA !== '' && match.scoreB !== '').length
+    ), 0);
+}
+
+function countTeams(state) {
+    return (state?.baseTeams || []).length;
+}
+
+function getSaveSummary(save) {
+    const state = save?.state || {};
+    const poolsCount = (state.pools || []).length;
+    const teamsCount = countTeams(state);
+    const scoredMatches = countScoredPoolMatches(state);
+    const format = state.matchFormat || state.format || 'D1';
+
+    return `${poolsCount} poule${poolsCount > 1 ? 's' : ''} · ${teamsCount} équipe${teamsCount > 1 ? 's' : ''} · ${scoredMatches} score${scoredMatches > 1 ? 's' : ''} · Format poules ${format}`;
+}
+
+
 function SavedTournaments({ ctx }) {
     const {
         handleDeleteNamedTournament,
@@ -34,6 +55,7 @@ function SavedTournaments({ ctx }) {
                     <p className="note">
                         Ici tu peux enregistrer plusieurs tournois, repartir sur un nouveau tournoi vide, puis revenir sur une ancienne sauvegarde quand tu veux.
                         Tout reste stocké uniquement sur cet appareil, sans cookie.
+                        Les scores détaillés sont sauvegardés ; la colonne S, PF, PA, Diff et Total sont recalculées automatiquement au chargement.
                     </p>
                 </div>
             </div>
@@ -103,6 +125,7 @@ function SavedTournaments({ ctx }) {
                                     <span>
                     <strong>{save.name}</strong>
                     <small>Dernière sauvegarde : {formatSaveDate(save.updatedAt)}</small>
+                    <small>{getSaveSummary(save)}</small>
                   </span>
                                 </label>
                             </article>

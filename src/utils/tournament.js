@@ -1,3 +1,4 @@
+import { assignSharedRanks, calculateFftMatchStats, compareFftRankingRows } from './fftScoring.js';
 
 function isFilledScoreValue(value) {
     return value !== '' && value !== null && value !== undefined;
@@ -97,27 +98,6 @@ function normalizeScoreDetailForStorage(detail, fallbackFormat = '') {
         }))
         : [];
 
-    const points = sets.reduce(
-        (acc, set) => {
-            if (!isFilledScoreValue(set.scoreA) || !isFilledScoreValue(set.scoreB)) {
-                return acc;
-            }
-
-            const scoreA = Number(set.scoreA);
-            const scoreB = Number(set.scoreB);
-
-            if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) {
-                return acc;
-            }
-
-            return {
-                pointsA: acc.pointsA + scoreA,
-                pointsB: acc.pointsB + scoreB,
-            };
-        },
-        { pointsA: 0, pointsB: 0 }
-    );
-
     const formatKey =
         detail.formatKey ||
         detail.matchFormatKey ||
@@ -125,31 +105,22 @@ function normalizeScoreDetailForStorage(detail, fallbackFormat = '') {
         fallbackFormat ||
         '';
 
-    const scoreA =
-        detail.scoreA === undefined || detail.scoreA === null
-            ? ''
-            : String(detail.scoreA);
-
-    const scoreB =
-        detail.scoreB === undefined || detail.scoreB === null
-            ? ''
-            : String(detail.scoreB);
-
     return {
+        ...detail,
         formatKey,
         format: detail.format || formatKey,
         sets,
-        scoreA,
-        scoreB,
-        pointsA:
-            detail.pointsA === undefined || detail.pointsA === null
-                ? points.pointsA
-                : Number(detail.pointsA) || 0,
-        pointsB:
-            detail.pointsB === undefined || detail.pointsB === null
-                ? points.pointsB
-                : Number(detail.pointsB) || 0,
-        isComplete: Boolean(detail.isComplete || (scoreA !== '' && scoreB !== '')),
+        scoreA:
+            detail.scoreA === undefined || detail.scoreA === null
+                ? ''
+                : String(detail.scoreA),
+        scoreB:
+            detail.scoreB === undefined || detail.scoreB === null
+                ? ''
+                : String(detail.scoreB),
+        pointsA: Number(detail.pointsA) || 0,
+        pointsB: Number(detail.pointsB) || 0,
+        isComplete: Boolean(detail.isComplete || (detail.scoreA !== '' && detail.scoreB !== '')),
     };
 }
 
@@ -196,6 +167,8 @@ export function createMatch(teamAId, teamBId, round = 1, localCourt = 1) {
         scoreB: '',
         scoreDetail: null,
         format: '',
+        formatKey: '',
+        matchFormatKey: '',
         round,
         localCourt,
     };
@@ -286,6 +259,8 @@ function copyMatchData(scheduledMatch, existing) {
         scoreB: existing.scoreB ?? '',
         scoreDetail: normalizeScoreDetailForStorage(existing.scoreDetail, existing.format) || null,
         format: existing.format || existing.scoreDetail?.formatKey || existing.scoreDetail?.format || existing.formatKey || existing.matchFormatKey || '',
+        formatKey: existing.formatKey || existing.matchFormatKey || existing.scoreDetail?.formatKey || existing.format || existing.scoreDetail?.format || '',
+        matchFormatKey: existing.matchFormatKey || existing.formatKey || existing.scoreDetail?.formatKey || existing.format || existing.scoreDetail?.format || '',
         courtOverride: existing.courtOverride || '',
     };
 }
@@ -313,17 +288,12 @@ export function optimizeMatchOrder(matches = []) {
 }
 
 export function getWinner(match) {
-    const globalScore = getMatchGlobalScoreForRanking(match);
-    const scoreA = globalScore.scoreA;
-    const scoreB = globalScore.scoreB;
+    const stats = calculateFftMatchStats(match);
 
-    const isValid =
-        Number.isFinite(scoreA) &&
-        Number.isFinite(scoreB);
+    if (!stats.isComplete) return null;
+    if (stats.winner === 'draw') return 'draw';
 
-    if (!isValid) return null;
-    if (scoreA === scoreB) return 'draw';
-    return scoreA > scoreB ? 'A' : 'B';
+    return stats.winner;
 }
 
 export function computeRanking(teams, matches) {
@@ -333,31 +303,33 @@ export function computeRanking(teams, matches) {
         fullName: team.fullName,
         cumulativeRank: team.cumulativeRank || 0,
         players: team.players || [],
+
         played: 0,
         wins: 0,
         losses: 0,
+
+        setsFor: 0,
+        setsAgainst: 0,
+        setDiff: 0,
+        useSetPriority: false,
+
         pointsFor: 0,
         pointsAgainst: 0,
         diff: 0,
+        fftGameDiff: 0,
         totalScore: 0,
+
+        position: 0,
+        isExAequo: false,
     }));
 
     const teamMap = new Map();
     ranking.forEach((team) => teamMap.set(team.teamId, team));
 
     matches.forEach((match) => {
-        const globalScore = getMatchGlobalScoreForRanking(match);
-        const scoreA = globalScore.scoreA;
-        const scoreB = globalScore.scoreB;
-        const rankingPoints = getMatchPointsForRanking(match);
+        const stats = calculateFftMatchStats(match);
 
-        const isValid =
-            Number.isFinite(scoreA) &&
-            Number.isFinite(scoreB) &&
-            match.teamAId &&
-            match.teamBId;
-
-        if (!isValid) return;
+        if (!stats.isComplete || !match.teamAId || !match.teamBId) return;
 
         const teamA = teamMap.get(match.teamAId);
         const teamB = teamMap.get(match.teamBId);
@@ -367,34 +339,43 @@ export function computeRanking(teams, matches) {
         teamA.played += 1;
         teamB.played += 1;
 
-        teamA.pointsFor += rankingPoints.pointsA;
-        teamA.pointsAgainst += rankingPoints.pointsB;
-        teamB.pointsFor += rankingPoints.pointsB;
-        teamB.pointsAgainst += rankingPoints.pointsA;
+        teamA.setsFor += stats.setsA;
+        teamA.setsAgainst += stats.setsB;
+        teamB.setsFor += stats.setsB;
+        teamB.setsAgainst += stats.setsA;
 
-        const diffA = rankingPoints.pointsA - rankingPoints.pointsB;
-        const diffB = rankingPoints.pointsB - rankingPoints.pointsA;
+        teamA.setDiff += stats.setDiffA;
+        teamB.setDiff += stats.setDiffB;
 
-        teamA.diff += diffA;
-        teamB.diff += diffB;
-        teamA.totalScore += diffA;
-        teamB.totalScore += diffB;
+        teamA.useSetPriority = teamA.useSetPriority || stats.useSetPriority;
+        teamB.useSetPriority = teamB.useSetPriority || stats.useSetPriority;
 
-        if (scoreA > scoreB) {
+        teamA.pointsFor += stats.fftGamesA;
+        teamA.pointsAgainst += stats.fftGamesB;
+        teamB.pointsFor += stats.fftGamesB;
+        teamB.pointsAgainst += stats.fftGamesA;
+
+        teamA.diff += stats.fftGameDiffA;
+        teamB.diff += stats.fftGameDiffB;
+
+        teamA.fftGameDiff += stats.fftGameDiffA;
+        teamB.fftGameDiff += stats.fftGameDiffB;
+
+        teamA.totalScore += stats.fftGameDiffA;
+        teamB.totalScore += stats.fftGameDiffB;
+
+        if (stats.winner === 'A') {
             teamA.wins += 1;
             teamB.losses += 1;
-        } else if (scoreB > scoreA) {
+        } else if (stats.winner === 'B') {
             teamB.wins += 1;
             teamA.losses += 1;
         }
     });
 
-    return ranking.sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
-        if (b.diff !== a.diff) return b.diff - a.diff;
-        return b.pointsFor - a.pointsFor;
-    });
+    const sorted = ranking.sort(compareFftRankingRows);
+
+    return assignSharedRanks(sorted);
 }
 
 export function createPool(name, teamItems = []) {
@@ -434,6 +415,8 @@ export function createDefaultState() {
         courtCount: 4,
         courtLabels: ['1', '2', '3', '4'],
         matchFormat: 'D1',
+        scoringVersion: 'fft-v2-sets-priority',
+        savedSchemaVersion: 2,
         savedAt: null,
     };
 }
@@ -462,6 +445,8 @@ function normalizeMatch(match = {}) {
         scoreB: match.scoreB ?? '',
         scoreDetail: normalizeScoreDetailForStorage(match.scoreDetail, match.format) || null,
         format: match.format || match.scoreDetail?.formatKey || match.scoreDetail?.format || match.formatKey || match.matchFormatKey || '',
+        formatKey: match.formatKey || match.matchFormatKey || match.scoreDetail?.formatKey || match.format || match.scoreDetail?.format || '',
+        matchFormatKey: match.matchFormatKey || match.formatKey || match.scoreDetail?.formatKey || match.format || match.scoreDetail?.format || '',
         round: match.round || 1,
         localCourt: match.localCourt || 1,
         courtOverride: match.courtOverride || '',
@@ -505,7 +490,9 @@ export function normalizeAppState(parsed) {
                     ...match,
                     courtOverride: imported.courtOverride || '',
                     scoreDetail: imported.scoreDetail || match.scoreDetail || null,
-                    format: imported.format || imported.scoreDetail?.formatKey || imported.scoreDetail?.format || match.format || '',
+                    format: imported.format || imported.scoreDetail?.formatKey || imported.scoreDetail?.format || imported.formatKey || imported.matchFormatKey || match.format || '',
+                    formatKey: imported.formatKey || imported.matchFormatKey || imported.scoreDetail?.formatKey || imported.format || imported.scoreDetail?.format || match.formatKey || '',
+                    matchFormatKey: imported.matchFormatKey || imported.formatKey || imported.scoreDetail?.formatKey || imported.format || imported.scoreDetail?.format || match.matchFormatKey || '',
                     scoreA: imported.scoreA ?? match.scoreA ?? '',
                     scoreB: imported.scoreB ?? match.scoreB ?? '',
                 }
@@ -557,6 +544,8 @@ export function normalizeAppState(parsed) {
         courtCount,
         courtLabels: normalizeCourtLabelsForStorage(parsed.courtLabels, courtCount),
         matchFormat: parsed.matchFormat || parsed.format || 'D1',
+        scoringVersion: parsed.scoringVersion || 'fft-v2-sets-priority',
+        savedSchemaVersion: Number(parsed.savedSchemaVersion || 2),
         savedAt: parsed.savedAt || null,
     };
 }

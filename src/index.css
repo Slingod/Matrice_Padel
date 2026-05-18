@@ -1385,3 +1385,30 @@ tbody td select {
     grid-column: auto;
   }
 }
+
+
+/* Affichage clair du différentiel de sets : Sets : +2 / -2 */
+.match-set-diff-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.55rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.45rem;
+  background: rgba(158, 203, 255, 0.08);
+  color: #9ecbff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.match-set-diff-inline-empty {
+  color: #cbd5e1;
+}
+/* v58b hide old global set score */
+.match-score-global,
+.match-global-score,
+.score-global,
+.global-score-label {
+  display: none;
+}
