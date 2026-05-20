@@ -7,7 +7,7 @@ function isFilledScoreValue(value) {
 
 function formatSignedValue(value) {
     const number = Number(value) || 0;
-    return number > 0 ? '+' + number : String(number);
+    return number > 0 ? `+${number}` : String(number);
 }
 
 export function getFftFormatKey(match = {}) {
@@ -70,6 +70,23 @@ export function normalizeFftSets(match = {}) {
     return [];
 }
 
+/**
+ * Calcule les statistiques FFT utilisées partout dans Padelingo.
+ *
+ * Règle B1/B2/C1/C2 :
+ * Le 3e set est un super tie-break. Il départage le match en sets,
+ * mais il compte seulement 1 point de jeu pour le gagnant et 0 pour le perdant
+ * dans PF / PA / Diff / Total.
+ *
+ * Donc :
+ * 10-0  => +1 / -1
+ * 10-4  => +1 / -1
+ * 13-11 => +1 / -1
+ *
+ * Les sets classiques gardent leur score réel :
+ * 5-3 => +2
+ * 0-4 => -4
+ */
 export function calculateFftMatchStats(match = {}) {
     const formatKey = getFftFormatKey(match);
     const requiredSets = getRequiredSetsToWinByFormat(formatKey);
@@ -106,15 +123,17 @@ export function calculateFftMatchStats(match = {}) {
         rawPointsA += scoreA;
         rawPointsB += scoreB;
 
-        // Correction demandée : le tie-break / super tie-break compte dans PF / PA / Diff.
-        fftGamesA += scoreA;
-        fftGamesB += scoreB;
-
         if (winner === 'A') {
             setsA += 1;
         } else {
             setsB += 1;
         }
+
+        const countedGamesA = isSuperTieBreak ? (winner === 'A' ? 1 : 0) : scoreA;
+        const countedGamesB = isSuperTieBreak ? (winner === 'B' ? 1 : 0) : scoreB;
+
+        fftGamesA += countedGamesA;
+        fftGamesB += countedGamesB;
 
         countedSets.push({
             index,
@@ -122,6 +141,8 @@ export function calculateFftMatchStats(match = {}) {
             scoreB,
             winner,
             isSuperTieBreak,
+            fftGamesA: countedGamesA,
+            fftGamesB: countedGamesB,
         });
 
         if (setsA >= requiredSets || setsB >= requiredSets) {
@@ -176,7 +197,7 @@ export function getFftSetDiffLabels(match = {}) {
     return {
         labelA,
         labelB,
-        pairLabel: labelA + ' / ' + labelB,
+        pairLabel: `${labelA} / ${labelB}`,
     };
 }
 

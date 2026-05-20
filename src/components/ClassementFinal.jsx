@@ -22,6 +22,13 @@ function ClassementFinal({ ctx }) {
                 Le classement final respecte d’abord le parcours dans le tableau final :
                 vainqueur, finaliste, demi, quart.
                 <br /><br />
+                Pour les équipes qualifiées dans le tableau final, les statistiques affichées
+                correspondent uniquement aux matchs du tableau final. Les scores des poules
+                ne sont pas additionnés à leur classement final.
+                <br />
+                Pour les équipes non qualifiées dans le tableau final, les statistiques affichées
+                correspondent uniquement aux matchs de poules.
+                <br /><br />
                 <strong>Signification des colonnes :</strong>
                 <br />
                 • <strong>J</strong> : matchs joués<br />
