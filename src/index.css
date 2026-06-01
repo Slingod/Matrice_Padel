@@ -1412,3 +1412,45 @@ tbody td select {
 .global-score-label {
   display: none;
 }
+
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.auth-card {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.auth-google-btn {
+  margin: 1.5rem auto;
+  justify-content: center;
+}
+
+.auth-pricing-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.auth-pricing-preview article {
+  padding: 1rem;
+  border: 1px solid rgba(147, 197, 253, 0.25);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.error-text {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+}

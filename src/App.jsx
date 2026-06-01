@@ -14,13 +14,17 @@ import ShareTournamentPanel from './components/live/ShareTournamentPanel.jsx';
 import MatchFormatSelector from './components/MatchFormatSelector.jsx';
 import LiveTournamentPage from './pages/LiveTournamentPage.jsx';
 import { useTournamentState } from './hooks/useTournamentState';
+import AccessGate from './components/auth/AccessGate.jsx';
+import { useAuthAccess } from './hooks/useAuthAccess';
 
 function MainPadelingoApp() {
     const ctx = useTournamentState();
+    const auth = useAuthAccess();
     const { activeTab } = ctx;
 
     return (
-        <div className="app">
+        <AccessGate auth={auth}>
+            <div className="app">
             <AppHeader />
             <AppToolbar ctx={ctx} />
 
@@ -43,8 +47,9 @@ function MainPadelingoApp() {
                 <Poule ctx={ctx} />
             )}
 
-            <LegalFooter />
-        </div>
+                <LegalFooter />
+            </div>
+        </AccessGate>
     );
 }
 
