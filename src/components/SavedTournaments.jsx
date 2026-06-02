@@ -2,9 +2,14 @@ import { FaFolderOpen, FaPlus, FaSave, FaTrash } from 'react-icons/fa';
 import { formatSaveDate } from '../utils/persistence';
 
 function countScoredPoolMatches(state) {
-    return (state?.pools || []).reduce((total, pool) => (
-        total + (pool.matches || []).filter((match) => match.scoreA !== '' && match.scoreB !== '').length
-    ), 0);
+    return (state?.pools || []).reduce(
+        (total, pool) =>
+            total +
+            (pool.matches || []).filter(
+                (match) => match.scoreA !== '' && match.scoreB !== ''
+            ).length,
+        0
+    );
 }
 
 function countTeams(state) {
@@ -21,7 +26,6 @@ function getSaveSummary(save) {
     return `${poolsCount} poule${poolsCount > 1 ? 's' : ''} · ${teamsCount} équipe${teamsCount > 1 ? 's' : ''} · ${scoredMatches} score${scoredMatches > 1 ? 's' : ''} · Format poules ${format}`;
 }
 
-
 function SavedTournaments({ ctx }) {
     const {
         handleDeleteNamedTournament,
@@ -35,10 +39,27 @@ function SavedTournaments({ ctx }) {
         tournamentSaveName,
     } = ctx;
 
+    const hasFullAccess = Boolean(ctx.auth?.hasFullAccess);
+    const savedLimit = Number(ctx.auth?.accessStatus?.savedTournamentsLimit || 2);
     const selectedSave = savedTournaments.find((save) => save.id === selectedTournamentSaveId) || null;
+
+    const isUpdatingSelectedSave = Boolean(selectedSave);
+    const hasReachedTrialSaveLimit =
+        !hasFullAccess &&
+        !isUpdatingSelectedSave &&
+        savedTournaments.length >= savedLimit;
 
     function submitSave(event) {
         event.preventDefault();
+
+        if (hasReachedTrialSaveLimit) {
+            alert(
+                `Ton essai gratuit permet de sauvegarder ${savedLimit} tournoi(s).\n\n` +
+                `Pour sauvegarder davantage de tournois, active un abonnement Padelingo.`
+            );
+            return;
+        }
+
         handleSaveNamedTournament(tournamentSaveName);
     }
 
@@ -53,10 +74,22 @@ function SavedTournaments({ ctx }) {
                 <div>
                     <h2>Mes tournois sauvegardés</h2>
                     <p className="note">
-                        Ici tu peux enregistrer plusieurs tournois, repartir sur un nouveau tournoi vide, puis revenir sur une ancienne sauvegarde quand tu veux.
-                        Tout reste stocké uniquement sur cet appareil, sans cookie.
-                        Les scores détaillés sont sauvegardés ; la colonne S, PF, PA, Diff et Total sont recalculées automatiquement au chargement.
+                        Ici tu peux enregistrer plusieurs tournois, repartir sur un nouveau tournoi vide,
+                        puis revenir sur une ancienne sauvegarde quand tu veux. Tout reste stocké uniquement
+                        sur cet appareil, sans cookie. Les scores détaillés sont sauvegardés ; la colonne S,
+                        PF, PA, Diff et Total sont recalculées automatiquement au chargement.
                     </p>
+
+                    {!hasFullAccess ? (
+                        <p className="note">
+                            Essai gratuit : {savedTournaments.length}/{savedLimit} sauvegarde(s) utilisée(s).
+                            Les sauvegardes supplémentaires sont réservées aux abonnés.
+                        </p>
+                    ) : (
+                        <p className="note">
+                            Accès premium : sauvegardes étendues activées.
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -65,8 +98,16 @@ function SavedTournaments({ ctx }) {
                     <span className="saved-tournament-kicker">Tournoi actuel</span>
                     <h3>Sauvegarder le tournoi ouvert</h3>
                     <p>
-                        Donne un nom clair à ta sauvegarde, par exemple “Tournoi Padel Club avril” ou “Open du dimanche matin”.
+                        Donne un nom clair à ta sauvegarde, par exemple “Tournoi Padel Club avril”
+                        ou “Open du dimanche matin”.
                     </p>
+
+                    {hasReachedTrialSaveLimit ? (
+                        <p className="note">
+                            Limite atteinte : tu peux encore charger ou supprimer une sauvegarde,
+                            mais tu ne peux pas créer une nouvelle sauvegarde pendant l’essai gratuit.
+                        </p>
+                    ) : null}
 
                     <label>
                         Nom de la sauvegarde
@@ -78,9 +119,11 @@ function SavedTournaments({ ctx }) {
                         />
                     </label>
 
-                    <button type="submit">
+                    <button type="submit" disabled={hasReachedTrialSaveLimit}>
                         <FaSave />
-                        Sauvegarder ce tournoi
+                        {hasReachedTrialSaveLimit
+                            ? 'Limite essai atteinte'
+                            : 'Sauvegarder ce tournoi'}
                     </button>
                 </form>
 
@@ -88,7 +131,8 @@ function SavedTournaments({ ctx }) {
                     <span className="saved-tournament-kicker">Nouveau départ</span>
                     <h3>Créer un nouveau tournoi</h3>
                     <p>
-                        Vide le tournoi actuellement affiché, sans supprimer tes sauvegardes nommées. Tu pourras les recharger ensuite depuis cette page.
+                        Vide le tournoi actuellement affiché, sans supprimer tes sauvegardes nommées.
+                        Tu pourras les recharger ensuite depuis cette page.
                     </p>
                     <button type="button" className="danger" onClick={handleStartNewTournament}>
                         <FaPlus />
@@ -114,7 +158,10 @@ function SavedTournaments({ ctx }) {
                         const isSelected = save.id === selectedTournamentSaveId;
 
                         return (
-                            <article key={save.id} className={`saved-tournament-row ${isSelected ? 'selected' : ''}`}>
+                            <article
+                                key={save.id}
+                                className={`saved-tournament-row ${isSelected ? 'selected' : ''}`}
+                            >
                                 <label className="saved-tournament-radio">
                                     <input
                                         type="radio"
@@ -123,10 +170,10 @@ function SavedTournaments({ ctx }) {
                                         onChange={() => selectSave(save)}
                                     />
                                     <span>
-                    <strong>{save.name}</strong>
-                    <small>Dernière sauvegarde : {formatSaveDate(save.updatedAt)}</small>
-                    <small>{getSaveSummary(save)}</small>
-                  </span>
+                                        <strong>{save.name}</strong>
+                                        <small>Dernière sauvegarde : {formatSaveDate(save.updatedAt)}</small>
+                                        <small>{getSaveSummary(save)}</small>
+                                    </span>
                                 </label>
                             </article>
                         );
@@ -142,7 +189,11 @@ function SavedTournaments({ ctx }) {
             <div className="saved-tournament-actions">
                 <div>
                     <strong>{selectedSave ? selectedSave.name : 'Aucune sauvegarde sélectionnée'}</strong>
-                    <span>{selectedSave ? `Mise à jour : ${formatSaveDate(selectedSave.updatedAt)}` : 'Sélectionne une sauvegarde pour la charger ou la supprimer.'}</span>
+                    <span>
+                        {selectedSave
+                            ? `Mise à jour : ${formatSaveDate(selectedSave.updatedAt)}`
+                            : 'Sélectionne une sauvegarde pour la charger ou la supprimer.'}
+                    </span>
                 </div>
 
                 <button type="button" onClick={handleLoadNamedTournament} disabled={!selectedTournamentSaveId}>
@@ -150,7 +201,12 @@ function SavedTournaments({ ctx }) {
                     Charger
                 </button>
 
-                <button type="button" className="danger" onClick={handleDeleteNamedTournament} disabled={!selectedTournamentSaveId}>
+                <button
+                    type="button"
+                    className="danger"
+                    onClick={handleDeleteNamedTournament}
+                    disabled={!selectedTournamentSaveId}
+                >
                     <FaTrash />
                     Supprimer
                 </button>
