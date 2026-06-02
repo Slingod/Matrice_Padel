@@ -7,6 +7,7 @@ import Poule from './components/Poule.jsx';
 import PhasesFinal from './components/PhasesFinal.jsx';
 import ClassementFinal from './components/ClassementFinal.jsx';
 import SavedTournaments from './components/SavedTournaments.jsx';
+import SubscriptionPage from './components/subscription/SubscriptionPage.jsx';
 import AppHeader from './components/layout/AppHeader.jsx';
 import AppToolbar from './components/layout/AppToolbar.jsx';
 import LegalFooter from './components/layout/LegalFooter.jsx';
@@ -49,6 +50,8 @@ function MainPadelingoApp() {
                     <ClassementFinal ctx={ctx} />
                 ) : activeTab === 'saves' ? (
                     <SavedTournaments ctx={ctx} />
+                ) : activeTab === 'subscription' ? (
+                    <SubscriptionPage ctx={ctx} />
                 ) : (
                     <Poule ctx={ctx} />
                 )}

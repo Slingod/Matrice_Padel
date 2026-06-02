@@ -142,6 +142,14 @@ function AppToolbar({ ctx }) {
                 >
                     Mes tournois
                 </button>
+
+                <button
+                    type="button"
+                    className={`tab-button ${activeTab === 'subscription' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('subscription')}
+                >
+                    Offres
+                </button>
             </div>
 
             <div className="top-actions-grid">
