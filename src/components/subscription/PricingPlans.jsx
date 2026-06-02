@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js';
+import { supabase } from '../../lib/supabaseClient';
 
 const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
 
@@ -73,10 +75,28 @@ const PRICING_PLANS = [
     },
 ];
 
+async function registerPendingSubscription(subscriptionId, planKey) {
+    const { data, error } = await supabase.rpc(
+        'register_pending_paypal_subscription',
+        {
+            p_paypal_subscription_id: subscriptionId,
+            p_plan_key: planKey,
+        }
+    );
+
+    if (error) {
+        console.error('Supabase pending subscription error:', error);
+        throw error;
+    }
+
+    return Array.isArray(data) ? data[0] : data;
+}
+
 function PricingCard({ plan }) {
+    const [isRegistering, setIsRegistering] = useState(false);
     const planId = PLAN_IDS[plan.id];
 
-    function handleApprove(data) {
+    async function handleApprove(data) {
         const subscriptionId = data?.subscriptionID || data?.subscription_id || '';
 
         console.log('PayPal subscription approved:', {
@@ -86,23 +106,54 @@ function PricingCard({ plan }) {
             rawData: data,
         });
 
-        // Keep the PayPal callback non-blocking.
-        // Showing alert() directly inside onApprove can cause PayPal postMessage ack timeouts.
-        window.setTimeout(() => {
-            alert(
-                'Abonnement PayPal Sandbox créé avec succès.\n\n' +
-                `Offre : ${plan.title}\n` +
-                `Subscription ID : ${subscriptionId || 'non disponible'}\n\n` +
-                'Prochaine étape : connecter ce Subscription ID à Supabase via un webhook PayPal sécurisé.'
+        if (!subscriptionId) {
+            window.setTimeout(() => {
+                alert(
+                    'PayPal a validé le paiement, mais aucun Subscription ID n’a été reçu.\n\n' +
+                    'Regarde la console navigateur pour voir le détail.'
+                );
+            }, 0);
+
+            return;
+        }
+
+        try {
+            setIsRegistering(true);
+
+            const pendingSubscription = await registerPendingSubscription(
+                subscriptionId,
+                plan.id
             );
-        }, 0);
+
+            console.log('Pending subscription registered in Supabase:', pendingSubscription);
+
+            window.setTimeout(() => {
+                alert(
+                    'Abonnement PayPal Sandbox créé avec succès.\n\n' +
+                    `Offre : ${plan.title}\n` +
+                    `Subscription ID : ${subscriptionId}\n\n` +
+                    'Ton abonnement est enregistré en attente dans Supabase.\n' +
+                    'Prochaine étape : le webhook PayPal passera automatiquement cet abonnement en actif.'
+                );
+            }, 0);
+        } catch (error) {
+            console.error('Unable to register pending subscription:', error);
+
+            window.setTimeout(() => {
+                alert(
+                    'L’abonnement PayPal a bien été créé, mais Padelingo n’a pas réussi à l’enregistrer dans Supabase.\n\n' +
+                    `Subscription ID : ${subscriptionId}\n\n` +
+                    'Regarde la console navigateur pour voir le détail.'
+                );
+            }, 0);
+        } finally {
+            setIsRegistering(false);
+        }
     }
 
     function handleError(error) {
         console.error('PayPal subscription error:', error);
 
-        // If PayPal already approved the subscription, some browser/adblock postMessage
-        // warnings can appear after success. We still log them for debugging.
         window.setTimeout(() => {
             alert(
                 'Une erreur est survenue avec PayPal Sandbox.\n\n' +
@@ -130,7 +181,11 @@ function PricingCard({ plan }) {
             </ul>
 
             <div className="paypal-button-zone">
-                {!planId ? (
+                {isRegistering ? (
+                    <button type="button" className="primary" disabled>
+                        Enregistrement Supabase...
+                    </button>
+                ) : !planId ? (
                     <button
                         type="button"
                         className="primary"
@@ -158,6 +213,7 @@ function PricingCard({ plan }) {
                         }}
                         onApprove={handleApprove}
                         onError={handleError}
+                        disabled={isRegistering}
                     />
                 )}
             </div>
