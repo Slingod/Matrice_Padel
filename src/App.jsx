@@ -31,7 +31,7 @@ function MainPadelingoApp() {
     return (
         <AccessGate auth={auth}>
             <div className="app">
-                <AppHeader />
+                <AppHeader auth={auth} />
                 <AppToolbar ctx={ctx} />
 
                 <MatchFormatSelector ctx={ctx} />

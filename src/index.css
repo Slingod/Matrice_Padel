@@ -1454,3 +1454,61 @@ tbody td select {
   padding: 0.75rem 1rem;
   border-radius: 12px;
 }
+
+
+.account-card {
+  min-width: min(100%, 320px);
+  max-width: 380px;
+  padding: 1rem;
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.62);
+  color: white;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
+}
+
+.account-card strong {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+  word-break: break-word;
+}
+
+.account-card p {
+  margin: 0.6rem 0 0.85rem;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.account-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.account-status.premium {
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, 0.32);
+  border: 1px solid rgba(74, 222, 128, 0.32);
+}
+
+.account-status.trial {
+  color: #bfdbfe;
+  background: rgba(30, 64, 175, 0.32);
+  border: 1px solid rgba(96, 165, 250, 0.32);
+}
+
+@media (max-width: 860px) {
+  .account-card {
+    width: 100%;
+    max-width: none;
+  }
+}
