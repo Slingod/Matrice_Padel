@@ -1620,3 +1620,12 @@ tbody td select {
     grid-template-columns: 1fr;
   }
 }
+
+.paypal-button-zone {
+  margin-top: auto;
+  min-height: 48px;
+}
+
+.paypal-button-zone iframe {
+  border-radius: 12px;
+}

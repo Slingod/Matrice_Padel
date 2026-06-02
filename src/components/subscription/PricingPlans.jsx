@@ -1,3 +1,14 @@
+import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js';
+
+const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+
+const PLAN_IDS = {
+    ja_monthly: import.meta.env.VITE_PAYPAL_JA_MONTHLY_PLAN_ID,
+    club_monthly: import.meta.env.VITE_PAYPAL_CLUB_MONTHLY_PLAN_ID,
+    club_6_months: import.meta.env.VITE_PAYPAL_CLUB_6_MONTHS_PLAN_ID,
+    club_yearly: import.meta.env.VITE_PAYPAL_CLUB_YEARLY_PLAN_ID,
+};
+
 const PRICING_PLANS = [
     {
         id: 'ja_monthly',
@@ -62,17 +73,42 @@ const PRICING_PLANS = [
     },
 ];
 
-function PricingCard({ plan, onSelectPlan }) {
-    function handleSelectPlan() {
-        if (typeof onSelectPlan === 'function') {
-            onSelectPlan(plan);
-            return;
-        }
+function PricingCard({ plan }) {
+    const planId = PLAN_IDS[plan.id];
 
-        alert(
-            'Le paiement PayPal sera ajouté à la prochaine étape.\n\n' +
-            `Offre sélectionnée : ${plan.title}`
-        );
+    function handleApprove(data) {
+        const subscriptionId = data?.subscriptionID || data?.subscription_id || '';
+
+        console.log('PayPal subscription approved:', {
+            planId,
+            planKey: plan.id,
+            subscriptionId,
+            rawData: data,
+        });
+
+        // Keep the PayPal callback non-blocking.
+        // Showing alert() directly inside onApprove can cause PayPal postMessage ack timeouts.
+        window.setTimeout(() => {
+            alert(
+                'Abonnement PayPal Sandbox créé avec succès.\n\n' +
+                `Offre : ${plan.title}\n` +
+                `Subscription ID : ${subscriptionId || 'non disponible'}\n\n` +
+                'Prochaine étape : connecter ce Subscription ID à Supabase via un webhook PayPal sécurisé.'
+            );
+        }, 0);
+    }
+
+    function handleError(error) {
+        console.error('PayPal subscription error:', error);
+
+        // If PayPal already approved the subscription, some browser/adblock postMessage
+        // warnings can appear after success. We still log them for debugging.
+        window.setTimeout(() => {
+            alert(
+                'Une erreur est survenue avec PayPal Sandbox.\n\n' +
+                'Regarde la console navigateur pour voir le détail.'
+            );
+        }, 0);
     }
 
     return (
@@ -93,24 +129,69 @@ function PricingCard({ plan, onSelectPlan }) {
                 ))}
             </ul>
 
-            <button type="button" className="primary" onClick={handleSelectPlan}>
-                Choisir cette offre
-            </button>
+            <div className="paypal-button-zone">
+                {!planId ? (
+                    <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                            alert(
+                                `Plan PayPal manquant pour : ${plan.title}\n\n` +
+                                'Vérifie tes variables VITE_PAYPAL_...PLAN_ID dans ton fichier .env, puis redémarre Vite.'
+                            );
+                        }}
+                    >
+                        Plan PayPal non configuré
+                    </button>
+                ) : (
+                    <PayPalButtons
+                        style={{
+                            layout: 'vertical',
+                            shape: 'pill',
+                            label: 'subscribe',
+                            color: 'gold',
+                        }}
+                        createSubscription={(_data, actions) => {
+                            return actions.subscription.create({
+                                plan_id: planId,
+                            });
+                        }}
+                        onApprove={handleApprove}
+                        onError={handleError}
+                    />
+                )}
+            </div>
         </article>
     );
 }
 
-function PricingPlans({ onSelectPlan = null }) {
+function PricingPlans() {
+    if (!PAYPAL_CLIENT_ID) {
+        return (
+            <div className="empty-state">
+                <strong>PayPal Sandbox n’est pas configuré.</strong>
+                <span>
+                    Ajoute VITE_PAYPAL_CLIENT_ID dans ton fichier .env, puis redémarre Vite.
+                </span>
+            </div>
+        );
+    }
+
     return (
-        <div className="pricing-grid">
-            {PRICING_PLANS.map((plan) => (
-                <PricingCard
-                    key={plan.id}
-                    plan={plan}
-                    onSelectPlan={onSelectPlan}
-                />
-            ))}
-        </div>
+        <PayPalScriptProvider
+            options={{
+                clientId: PAYPAL_CLIENT_ID,
+                vault: true,
+                intent: 'subscription',
+                currency: 'EUR',
+            }}
+        >
+            <div className="pricing-grid">
+                {PRICING_PLANS.map((plan) => (
+                    <PricingCard key={plan.id} plan={plan} />
+                ))}
+            </div>
+        </PayPalScriptProvider>
     );
 }
 
