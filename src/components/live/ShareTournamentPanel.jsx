@@ -32,6 +32,8 @@ function ShareTournamentPanel({ ctx }) {
     const [isSyncing, setIsSyncing] = useState(false);
     const lastSyncedStateRef = useRef('');
 
+    const hasFullAccess = Boolean(ctx.auth?.hasFullAccess);
+
     const publicUrl = useMemo(() => {
         if (!share?.publicId) return '';
         return `${window.location.origin}/live/${share.publicId}`;
@@ -50,7 +52,21 @@ function ShareTournamentPanel({ ctx }) {
         ctx.courtLabels,
     ]);
 
+    function requireFullAccessForLive() {
+        if (hasFullAccess) return true;
+
+        alert(
+            'Le partage live spectateurs est réservé aux abonnés Padelingo.\n\n' +
+            'Pendant l’essai gratuit, tu peux tester la création de tournoi, les poules, les scores et les classements, ' +
+            'mais la publication live est disponible avec un abonnement.'
+        );
+
+        return false;
+    }
+
     async function handlePublish() {
+        if (!requireFullAccessForLive()) return;
+
         try {
             setIsPublishing(true);
             setStatus('Publication du tournoi en cours...');
@@ -99,6 +115,7 @@ function ShareTournamentPanel({ ctx }) {
 
     useEffect(() => {
         if (!share?.publicId || !share?.adminToken) return;
+        if (!hasFullAccess) return;
         if (lastSyncedStateRef.current === currentStateString) return;
 
         const timeoutId = window.setTimeout(async () => {
@@ -122,7 +139,7 @@ function ShareTournamentPanel({ ctx }) {
         }, 900);
 
         return () => window.clearTimeout(timeoutId);
-    }, [share?.publicId, share?.adminToken, currentStateString, ctx]);
+    }, [share?.publicId, share?.adminToken, currentStateString, ctx, hasFullAccess]);
 
     return (
         <section className="card live-share-card">
@@ -133,6 +150,12 @@ function ShareTournamentPanel({ ctx }) {
                         Génère un lien public et un QR code pour suivre les matchs en direct,
                         sans connexion et sans modification possible côté spectateur.
                     </p>
+
+                    {!hasFullAccess ? (
+                        <p className="note">
+                            Fonction premium : le partage live est réservé aux abonnés Padelingo.
+                        </p>
+                    ) : null}
                 </div>
 
                 {!share ? (
@@ -164,7 +187,12 @@ function ShareTournamentPanel({ ctx }) {
                                 Copier le lien
                             </button>
 
-                            <a className="icon-btn link-btn" href={publicUrl} target="_blank" rel="noreferrer">
+                            <a
+                                className="icon-btn link-btn"
+                                href={publicUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 Ouvrir le live
                             </a>
                         </div>

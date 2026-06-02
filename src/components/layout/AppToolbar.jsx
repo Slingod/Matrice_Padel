@@ -34,88 +34,192 @@ function AppToolbar({ ctx }) {
         triggerImport,
     } = ctx;
 
+    const hasFullAccess = Boolean(ctx.auth?.hasFullAccess);
+
+    function requireFullAccess(featureName) {
+        if (hasFullAccess) return true;
+
+        alert(
+            `${featureName} est réservé aux abonnés Padelingo.\n\n` +
+            `Pendant l’essai gratuit, tu peux importer, créer et tester un tournoi, ` +
+            `mais les exports complets sont disponibles avec un abonnement.`
+        );
+
+        return false;
+    }
+
+    function handleProtectedJsonExport() {
+        if (!requireFullAccess('L’export JSON')) return;
+        handleExportJson();
+    }
+
+    function handleProtectedCsvExport() {
+        if (!requireFullAccess('L’export CSV')) return;
+
+        exportTournamentToCSV(
+            baseTeams,
+            pools,
+            serpentin,
+            safeFinalStage,
+            finalRanking,
+            combinedPointsRanking,
+            courtCount
+        );
+    }
+
+    function handleProtectedXlsxExport() {
+        if (!requireFullAccess('L’export XLSX')) return;
+
+        exportTournamentToXLSX(
+            baseTeams,
+            pools,
+            serpentin,
+            safeFinalStage,
+            finalRanking,
+            combinedPointsRanking,
+            courtCount
+        );
+    }
+
     return (
         <section className="tabs-card">
             <div className="tabs">
-                <button type="button" className={`tab-button ${activeTab === 'base' ? 'active' : ''}`} onClick={() => setActiveTab('base')}>
+                <button
+                    type="button"
+                    className={`tab-button ${activeTab === 'base' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('base')}
+                >
                     Base
                 </button>
 
-                <button type="button" className={`tab-button ${activeTab === 'serpentin' ? 'active' : ''}`} onClick={() => setActiveTab('serpentin')}>
+                <button
+                    type="button"
+                    className={`tab-button ${activeTab === 'serpentin' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('serpentin')}
+                >
                     Serpentin
                 </button>
 
-                <button type="button" className={`tab-button ${activeTab === 'planning' ? 'active' : ''}`} onClick={() => setActiveTab('planning')}>
+                <button
+                    type="button"
+                    className={`tab-button ${activeTab === 'planning' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('planning')}
+                >
                     Planning
                 </button>
 
                 {pools.map((pool) => (
-                    <button key={pool.id} type="button" className={`tab-button ${activeTab === pool.id ? 'active' : ''}`} onClick={() => setActiveTab(pool.id)}>
+                    <button
+                        key={pool.id}
+                        type="button"
+                        className={`tab-button ${activeTab === pool.id ? 'active' : ''}`}
+                        onClick={() => setActiveTab(pool.id)}
+                    >
                         {pool.name}
                     </button>
                 ))}
 
-                <button type="button" className={`tab-button ${activeTab === 'finals' ? 'active' : ''}`} onClick={() => setActiveTab('finals')}>
+                <button
+                    type="button"
+                    className={`tab-button ${activeTab === 'finals' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('finals')}
+                >
                     Phase finale
                 </button>
 
-                <button type="button" className={`tab-button ${activeTab === 'final-ranking' ? 'active' : ''}`} onClick={() => setActiveTab('final-ranking')}>
+                <button
+                    type="button"
+                    className={`tab-button ${activeTab === 'final-ranking' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('final-ranking')}
+                >
                     Classement final
                 </button>
 
-                <button type="button" className={`tab-button tab-button-save ${activeTab === 'saves' ? 'active' : ''}`} onClick={() => setActiveTab('saves')}>
+                <button
+                    type="button"
+                    className={`tab-button tab-button-save ${activeTab === 'saves' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('saves')}
+                >
                     Mes tournois
                 </button>
             </div>
 
             <div className="top-actions-grid">
                 <form className="add-pool-form" onSubmit={handleAddPool}>
-                    <input type="text" placeholder="Nouvelle poule" value={newPoolName} onChange={(event) => setNewPoolName(event.target.value)} />
+                    <input
+                        type="text"
+                        placeholder="Nouvelle poule"
+                        value={newPoolName}
+                        onChange={(event) => setNewPoolName(event.target.value)}
+                    />
                     <button type="submit">Ajouter une Poule</button>
                 </form>
 
                 <div className="export-actions">
-                    <input ref={importInputRef} type="file" accept=".xlsx,.csv,.json" onChange={handleImportFile} hidden />
+                    <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".xlsx,.csv,.json"
+                        onChange={handleImportFile}
+                        hidden
+                    />
 
                     <button type="button" onClick={triggerImport}>
                         <FaFileImport />
                         Importer XLSX / CSV / JSON
                     </button>
 
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
+                    <label
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            color: 'white',
+                        }}
+                    >
                         Terrains dispo
                         <input
                             type="number"
                             min="1"
                             value={courtCount}
-                            onChange={(event) => setCourtCount(Math.max(1, Number(event.target.value) || 1))}
+                            onChange={(event) =>
+                                setCourtCount(Math.max(1, Number(event.target.value) || 1))
+                            }
                             style={{ width: 90 }}
                         />
                     </label>
 
-                    <button type="button" title="Modifier la numérotation des terrains" onClick={() => setIsCourtSettingsOpen((prev) => !prev)}>
+                    <button
+                        type="button"
+                        title="Modifier la numérotation des terrains"
+                        onClick={() => setIsCourtSettingsOpen((prev) => !prev)}
+                    >
                         <FaCog />
                         Terrains
                     </button>
 
-                    <button type="button" onClick={handleExportJson}>
+                    <button type="button" onClick={handleProtectedJsonExport}>
                         <FaSave />
                         Exporter JSON
                     </button>
 
-                    <button type="button" onClick={() => exportTournamentToCSV(baseTeams, pools, serpentin, safeFinalStage, finalRanking, combinedPointsRanking, courtCount)}>
+                    <button type="button" onClick={handleProtectedCsvExport}>
                         <FaFileCsv />
                         Exporter CSV
                     </button>
 
-                    <button type="button" onClick={() => exportTournamentToXLSX(baseTeams, pools, serpentin, safeFinalStage, finalRanking, combinedPointsRanking, courtCount)}>
+                    <button type="button" onClick={handleProtectedXlsxExport}>
                         <FaFileExcel />
                         Exporter XLSX
                     </button>
                 </div>
 
                 {saveNotice && (
-                    <div className={`autosave-info ${saveNotice.type || 'success'}`} role="status" aria-live="polite">
+                    <div
+                        className={`autosave-info ${saveNotice.type || 'success'}`}
+                        role="status"
+                        aria-live="polite"
+                    >
                         <strong>{saveNotice.title}</strong>
                         <span>{saveNotice.message}</span>
                     </div>
@@ -123,7 +227,13 @@ function AppToolbar({ ctx }) {
             </div>
 
             {isCourtSettingsOpen && (
-                <div className="card" style={{ marginTop: '1rem', background: 'rgba(255,255,255,0.08)' }}>
+                <div
+                    className="card"
+                    style={{
+                        marginTop: '1rem',
+                        background: 'rgba(255,255,255,0.08)',
+                    }}
+                >
                     <div className="section-head">
                         <div>
                             <h2>Numérotation manuelle des terrains</h2>
@@ -136,11 +246,32 @@ function AppToolbar({ ctx }) {
                         </button>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                            gap: '0.75rem',
+                        }}
+                    >
                         {courtLabels.map((label, index) => (
-                            <label key={`court-label-${index}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', color: 'white' }}>
+                            <label
+                                key={`court-label-${index}`}
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.35rem',
+                                    color: 'white',
+                                }}
+                            >
                                 Terrain interne {index + 1}
-                                <input type="text" value={label} onChange={(event) => handleCourtLabelChange(index, event.target.value)} placeholder={`Terrain ${index + 1}`} />
+                                <input
+                                    type="text"
+                                    value={label}
+                                    onChange={(event) =>
+                                        handleCourtLabelChange(index, event.target.value)
+                                    }
+                                    placeholder={`Terrain ${index + 1}`}
+                                />
                             </label>
                         ))}
                     </div>

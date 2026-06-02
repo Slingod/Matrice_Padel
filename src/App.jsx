@@ -18,34 +18,40 @@ import AccessGate from './components/auth/AccessGate.jsx';
 import { useAuthAccess } from './hooks/useAuthAccess';
 
 function MainPadelingoApp() {
-    const ctx = useTournamentState();
+    const tournamentCtx = useTournamentState();
     const auth = useAuthAccess();
+
+    const ctx = {
+        ...tournamentCtx,
+        auth,
+    };
+
     const { activeTab } = ctx;
 
     return (
         <AccessGate auth={auth}>
             <div className="app">
-            <AppHeader />
-            <AppToolbar ctx={ctx} />
+                <AppHeader />
+                <AppToolbar ctx={ctx} />
 
-            <MatchFormatSelector />
-            <ShareTournamentPanel ctx={ctx} />
+                <MatchFormatSelector ctx={ctx} />
+                <ShareTournamentPanel ctx={ctx} />
 
-            {activeTab === 'base' ? (
-                <Base ctx={ctx} />
-            ) : activeTab === 'serpentin' ? (
-                <Serpentin ctx={ctx} />
-            ) : activeTab === 'planning' ? (
-                <Planning ctx={ctx} />
-            ) : activeTab === 'finals' ? (
-                <PhasesFinal ctx={ctx} />
-            ) : activeTab === 'final-ranking' ? (
-                <ClassementFinal ctx={ctx} />
-            ) : activeTab === 'saves' ? (
-                <SavedTournaments ctx={ctx} />
-            ) : (
-                <Poule ctx={ctx} />
-            )}
+                {activeTab === 'base' ? (
+                    <Base ctx={ctx} />
+                ) : activeTab === 'serpentin' ? (
+                    <Serpentin ctx={ctx} />
+                ) : activeTab === 'planning' ? (
+                    <Planning ctx={ctx} />
+                ) : activeTab === 'finals' ? (
+                    <PhasesFinal ctx={ctx} />
+                ) : activeTab === 'final-ranking' ? (
+                    <ClassementFinal ctx={ctx} />
+                ) : activeTab === 'saves' ? (
+                    <SavedTournaments ctx={ctx} />
+                ) : (
+                    <Poule ctx={ctx} />
+                )}
 
                 <LegalFooter />
             </div>
