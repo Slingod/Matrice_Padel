@@ -12,10 +12,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-function createAdminClient(adminToken) {
+function createLiveAdminClient(adminToken, accessToken) {
     return createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false,
+        },
         global: {
             headers: {
+                Authorization: `Bearer ${accessToken}`,
                 'x-admin-token': adminToken,
             },
         },
@@ -103,7 +109,10 @@ function getNormalizedMatchScore(match = {}, detail = null) {
     }
 
     if (Array.isArray(detail?.sets)) {
-        return computeScoreFromSets(detail.sets, detail.formatKey || match.formatKey || match.matchFormatKey || 'D1');
+        return computeScoreFromSets(
+            detail.sets,
+            detail.formatKey || match.formatKey || match.matchFormatKey || 'D1'
+        );
     }
 
     return {
@@ -164,6 +173,20 @@ function hydrateFinalStageForLive(stage) {
     };
 }
 
+async function getCurrentSessionOrThrow() {
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) {
+        throw new Error(error.message || 'Impossible de vérifier la session utilisateur.');
+    }
+
+    if (!data?.session?.user || !data?.session?.access_token) {
+        throw new Error('Tu dois être connecté pour publier ou synchroniser un live.');
+    }
+
+    return data.session;
+}
+
 export function buildSerializableTournamentState(ctx) {
     return {
         baseTeams: ctx.baseTeams || [],
@@ -179,6 +202,12 @@ export function buildSerializableTournamentState(ctx) {
 }
 
 export async function publishTournament(ctx, name = 'Tournoi Padelingo') {
+    const session = await getCurrentSessionOrThrow();
+
+    if (!ctx.auth?.hasFullAccess) {
+        throw new Error('Le partage live spectateurs est réservé aux abonnés Padelingo.');
+    }
+
     const adminToken = randomString(48);
     const publicId = slugId();
     const adminTokenHash = await sha256(adminToken);
@@ -187,6 +216,7 @@ export async function publishTournament(ctx, name = 'Tournoi Padelingo') {
     const { data, error } = await supabase
         .from('live_tournaments')
         .insert({
+            owner_id: session.user.id,
             public_id: publicId,
             name,
             state,
@@ -206,16 +236,23 @@ export async function publishTournament(ctx, name = 'Tournoi Padelingo') {
 }
 
 export async function updatePublishedTournament(publicId, adminToken, ctx) {
-    const adminClient = createAdminClient(adminToken);
+    const session = await getCurrentSessionOrThrow();
+
+    if (!ctx.auth?.hasFullAccess) {
+        throw new Error('La synchronisation live est réservée aux abonnés Padelingo.');
+    }
+
+    const liveAdminClient = createLiveAdminClient(adminToken, session.access_token);
     const state = buildSerializableTournamentState(ctx);
 
-    const { data, error } = await adminClient
+    const { data, error } = await liveAdminClient
         .from('live_tournaments')
         .update({
             state,
             updated_at: new Date().toISOString(),
         })
         .eq('public_id', publicId)
+        .eq('owner_id', session.user.id)
         .select('public_id, name, state, created_at, updated_at')
         .single();
 
