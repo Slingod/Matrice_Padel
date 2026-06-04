@@ -1,4 +1,5 @@
 import LoginPage from './LoginPage.jsx';
+import PricingPlans from '../subscription/PricingPlans.jsx';
 
 function formatTrialDate(value) {
     if (!value) return '';
@@ -44,109 +45,8 @@ function BlockedAccountPage({ auth }) {
     );
 }
 
-function PricingCard({
-                         title,
-                         audience,
-                         price,
-                         billing,
-                         highlight,
-                         features,
-                         badge,
-                     }) {
-    function handleUnavailablePayment() {
-        alert(
-            'Le paiement PayPal sera ajouté à la prochaine étape.\n\n' +
-            `Offre sélectionnée : ${title}`
-        );
-    }
-
-    return (
-        <article className={`pricing-card ${highlight ? 'featured' : ''}`}>
-            {badge ? <span className="pricing-badge">{badge}</span> : null}
-
-            <h3>{title}</h3>
-            <p className="pricing-audience">{audience}</p>
-
-            <div className="pricing-price">
-                <strong>{price}</strong>
-                <span>{billing}</span>
-            </div>
-
-            <ul>
-                {features.map((feature) => (
-                    <li key={feature}>{feature}</li>
-                ))}
-            </ul>
-
-            <button type="button" className="primary" onClick={handleUnavailablePayment}>
-                Choisir cette offre
-            </button>
-        </article>
-    );
-}
-
 function SubscriptionRequiredPage({ auth }) {
     const trialEnd = formatTrialDate(auth.accessStatus?.trialEndsAt);
-
-    const pricingPlans = [
-        {
-            title: 'Juge-arbitre',
-            audience: 'Pour les juges-arbitres indépendants et organisateurs ponctuels.',
-            price: '29,99 €',
-            billing: '/ mois · sans engagement',
-            badge: 'Individuel',
-            features: [
-                'Accès complet à Padelingo',
-                'Exports PDF / CSV / XLSX / JSON',
-                'Partage live spectateurs',
-                'Sauvegardes étendues',
-                'Résiliation possible chaque mois',
-            ],
-        },
-        {
-            title: 'Club mensuel',
-            audience: 'Pour les clubs, associations et structures qui veulent rester flexibles.',
-            price: '44,99 €',
-            billing: '/ mois · sans engagement',
-            badge: 'Club',
-            features: [
-                'Accès complet à Padelingo',
-                'Exports complets',
-                'Partage live spectateurs',
-                'Sauvegardes étendues',
-                'Sans engagement',
-            ],
-        },
-        {
-            title: 'Club semestriel',
-            audience: 'Pour les clubs qui utilisent Padelingo régulièrement sur la saison.',
-            price: '209,94 €',
-            billing: '/ 6 mois · équivalent 34,99 € / mois',
-            badge: 'Économie',
-            features: [
-                'Accès complet pendant 6 mois',
-                'Prix réduit par rapport au mensuel',
-                'Exports et live inclus',
-                'Sauvegardes étendues',
-                'Facturation semestrielle',
-            ],
-        },
-        {
-            title: 'Club annuel',
-            audience: 'Pour les clubs qui veulent le meilleur tarif sur l’année.',
-            price: '359,88 €',
-            billing: '/ an · équivalent 29,99 € / mois',
-            badge: 'Meilleur tarif',
-            highlight: true,
-            features: [
-                'Accès complet pendant 1 an',
-                'Meilleur prix mensuel équivalent',
-                'Exports et live inclus',
-                'Sauvegardes étendues',
-                'Facturation annuelle',
-            ],
-        },
-    ];
 
     return (
         <main className="app auth-page">
@@ -166,15 +66,12 @@ function SubscriptionRequiredPage({ auth }) {
                     </p>
                 ) : null}
 
-                <div className="pricing-grid">
-                    {pricingPlans.map((plan) => (
-                        <PricingCard key={plan.title} {...plan} />
-                    ))}
-                </div>
+                <PricingPlans onSubscriptionRegistered={auth.reloadAccessStatus} />
 
                 <p className="note">
-                    Le paiement PayPal sécurisé sera branché à la prochaine étape. Une fois le paiement actif,
-                    l’accès complet sera automatiquement débloqué.
+                    Le paiement PayPal sécurisé débloque automatiquement l’accès complet après
+                    confirmation du webhook PayPal. Si l’accès ne se met pas à jour immédiatement,
+                    attends quelques secondes puis actualise la page.
                 </p>
 
                 <button type="button" className="danger" onClick={auth.signOut}>

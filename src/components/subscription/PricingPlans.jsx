@@ -92,9 +92,22 @@ async function registerPendingSubscription(subscriptionId, planKey) {
     return Array.isArray(data) ? data[0] : data;
 }
 
-function PricingCard({ plan }) {
+function PricingCard({ plan, onSubscriptionRegistered }) {
     const [isRegistering, setIsRegistering] = useState(false);
     const planId = PLAN_IDS[plan.id];
+
+    async function refreshAccessAfterWebhook() {
+        if (typeof onSubscriptionRegistered !== 'function') return;
+
+        // The PayPal webhook can take a few seconds to update Supabase.
+        window.setTimeout(() => {
+            onSubscriptionRegistered();
+        }, 3000);
+
+        window.setTimeout(() => {
+            onSubscriptionRegistered();
+        }, 8000);
+    }
 
     async function handleApprove(data) {
         const subscriptionId = data?.subscriptionID || data?.subscription_id || '';
@@ -127,13 +140,15 @@ function PricingCard({ plan }) {
 
             console.log('Pending subscription registered in Supabase:', pendingSubscription);
 
+            await refreshAccessAfterWebhook();
+
             window.setTimeout(() => {
                 alert(
                     'Abonnement PayPal Sandbox créé avec succès.\n\n' +
                     `Offre : ${plan.title}\n` +
                     `Subscription ID : ${subscriptionId}\n\n` +
-                    'Ton abonnement est enregistré en attente dans Supabase.\n' +
-                    'Prochaine étape : le webhook PayPal passera automatiquement cet abonnement en actif.'
+                    'Ton abonnement est enregistré. Le webhook PayPal va activer ton accès automatiquement.\n\n' +
+                    'Si la page ne se débloque pas immédiatement, attends quelques secondes puis actualise.'
                 );
             }, 0);
         } catch (error) {
@@ -141,7 +156,7 @@ function PricingCard({ plan }) {
 
             window.setTimeout(() => {
                 alert(
-                    'L’abonnement PayPal a bien été créé, mais Padelingo n’a pas réussi à l’enregistrer dans Supabase.\n\n' +
+                    'L’abonnement PayPal a bien été créé, mais Padelingo n’a pas réussi à l’enregistrer.\n\n' +
                     `Subscription ID : ${subscriptionId}\n\n` +
                     'Regarde la console navigateur pour voir le détail.'
                 );
@@ -221,7 +236,7 @@ function PricingCard({ plan }) {
     );
 }
 
-function PricingPlans() {
+function PricingPlans({ onSubscriptionRegistered }) {
     if (!PAYPAL_CLIENT_ID) {
         return (
             <div className="empty-state">
@@ -244,7 +259,11 @@ function PricingPlans() {
         >
             <div className="pricing-grid">
                 {PRICING_PLANS.map((plan) => (
-                    <PricingCard key={plan.id} plan={plan} />
+                    <PricingCard
+                        key={plan.id}
+                        plan={plan}
+                        onSubscriptionRegistered={onSubscriptionRegistered}
+                    />
                 ))}
             </div>
         </PayPalScriptProvider>
