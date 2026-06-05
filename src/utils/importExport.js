@@ -27,7 +27,7 @@ function downloadBlob(blob, filename) {
 }
 
 function buildTeamDisplayName(players) {
-    return players.map((player) => player.name).join(' & ');
+    return players.map((player) => player.name).filter(Boolean).join(' & ');
 }
 
 function dedupeTeams(teams) {
@@ -55,7 +55,19 @@ function parseRowsFromSheet(sheet) {
             Array.isArray(row) &&
             row.some((cell) => {
                 const normalized = normalizeHeader(cell);
-                return normalized === 'equipe' || normalized === 'joueur' || normalized === 'nom';
+
+                return [
+                    'equipe',
+                    'joueur',
+                    'nom',
+                    'prenom',
+                    'licence',
+                    'club',
+                    'classement',
+                    'nom partenaire',
+                    'prenom partenaire',
+                    'poids paire',
+                ].includes(normalized);
             })
     );
 
@@ -69,43 +81,95 @@ function parseRowsFromSheet(sheet) {
         .filter((row) => Array.isArray(row) && row.some((cell) => normalizeText(cell) !== ''))
         .map((row) => {
             const obj = {};
+
             headers.forEach((header, index) => {
                 obj[header] = row[index] ?? '';
             });
+
             return obj;
         });
 }
 
+function normalizePersonName(value) {
+    return normalizeText(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+function buildPersonDisplayName(lastName, firstName) {
+    return [normalizeText(lastName), normalizeText(firstName)]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function buildPersonKey(lastName, firstName) {
+    return normalizePersonName(buildPersonDisplayName(lastName, firstName));
+}
+
+function buildPairKey(playerKey, partnerKey) {
+    return [playerKey, partnerKey].filter(Boolean).sort().join('__');
+}
+
+function parsePairWeightValue(value) {
+    const text = normalizeText(value);
+    const normalizedNumber = text.replace(/\s/g, '').replace(',', '.');
+    const parsed = Number(normalizedNumber);
+
+    return {
+        text,
+        value: Number.isFinite(parsed) ? parsed : 0,
+        isNumeric: Number.isFinite(parsed),
+        requiresManualReview:
+            text !== '' &&
+            !Number.isFinite(parsed) &&
+            /calcul|ponderation|pondération|assimilation|equivalence|équivalence/i.test(text),
+    };
+}
+
 function findValue(row, aliases) {
-    for (const [key, value] of Object.entries(row)) {
-        if (aliases.includes(normalizeHeader(key))) {
+    const normalizedAliases = aliases.map((alias) => normalizeHeader(alias));
+
+    for (const [key, value] of Object.entries(row || {})) {
+        if (normalizedAliases.includes(normalizeHeader(key))) {
             return value;
         }
     }
+
     return '';
 }
 
 function findFirstFilledValue(row, aliasGroups) {
     for (const aliases of aliasGroups) {
         const value = findValue(row, aliases);
+
         if (normalizeText(value) !== '') {
             return value;
         }
     }
+
     return '';
 }
 
 function parseRankValue(value) {
     if (value === null || value === undefined) return 0;
 
-    const normalized = String(value)
+    const text = normalizeText(value);
+
+    if (!text) return 0;
+
+    const normalized = text
         .replace(/\s/g, '')
         .replace(',', '.')
-        .trim();
+        .replace(/[^\d.]/g, '');
 
     if (!normalized) return 0;
 
     const parsed = Number(normalized);
+
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -116,7 +180,177 @@ function getEffectiveRank(rawRank, rawAdjustmentRank) {
     return adjustmentRank > 0 ? adjustmentRank : rank;
 }
 
+function getFftPlayerFromRow(row) {
+    const lastName = findValue(row, ['nom', 'lastname', 'last name']);
+    const firstName = findValue(row, ['prenom', 'prénom', 'firstname', 'first name']);
+    const rawRanking = findValue(row, ['classement', 'ranking']);
+    const rawRankColumn = findValue(row, ['rang']);
+    const rank = parseRankValue(rawRanking);
+    const displayName = buildPersonDisplayName(lastName, firstName);
+    const key = buildPersonKey(lastName, firstName);
+
+    return {
+        key,
+        displayName,
+        rank,
+        rawRanking: normalizeText(rawRanking),
+        rawRankColumn: normalizeText(rawRankColumn),
+    };
+}
+
+function getFftPartnerFromRow(row) {
+    const lastName = findValue(row, [
+        'nom partenaire',
+        'nom du partenaire',
+        'partner last name',
+        'partner lastname',
+    ]);
+    const firstName = findValue(row, [
+        'prenom partenaire',
+        'prénom partenaire',
+        'prenom du partenaire',
+        'prénom du partenaire',
+        'partner first name',
+        'partner firstname',
+    ]);
+    const displayName = buildPersonDisplayName(lastName, firstName);
+    const key = buildPersonKey(lastName, firstName);
+
+    return {
+        key,
+        displayName,
+    };
+}
+
+function isFftRegistrationRow(row) {
+    return Boolean(
+        findValue(row, ['nom']) &&
+        findValue(row, ['prenom', 'prénom']) &&
+        findValue(row, ['nom partenaire']) &&
+        findValue(row, ['prenom partenaire', 'prénom partenaire'])
+    );
+}
+
+function createPlayerFromFftData(player, slot, needsRankReview, teamWarning) {
+    const warningSuffix = needsRankReview ? ' ⚠️ rang à vérifier' : '';
+
+    return {
+        id: `${player.key || slot}-${slot}`,
+        slot,
+        name: `${player.displayName}${warningSuffix}`.trim(),
+        rank: Number(player.rank) || 0,
+        rawRanking: player.rawRanking || '',
+        rawRankColumn: player.rawRankColumn || '',
+        needsRankReview: Boolean(needsRankReview),
+        rankReviewMessage: needsRankReview ? teamWarning : '',
+    };
+}
+
+function parseFftRegistrationRows(rows) {
+    const groupedPairs = new Map();
+
+    rows.forEach((row) => {
+        if (!isFftRegistrationRow(row)) return;
+
+        const player = getFftPlayerFromRow(row);
+        const partner = getFftPartnerFromRow(row);
+        const pairKey = buildPairKey(player.key, partner.key);
+        const pairWeight = parsePairWeightValue(findValue(row, ['poids paire', 'poids de paire', 'pair weight']));
+
+        if (!player.key || !partner.key || !pairKey) return;
+
+        if (!groupedPairs.has(pairKey)) {
+            groupedPairs.set(pairKey, {
+                pairKey,
+                order: [player.key, partner.key],
+                players: new Map(),
+                partnerNames: new Map(),
+                pairWeightText: pairWeight.text,
+                officialPairWeight: pairWeight.value,
+                requiresManualReview: pairWeight.requiresManualReview,
+            });
+        }
+
+        const pair = groupedPairs.get(pairKey);
+
+        if (!pair.players.has(player.key)) {
+            pair.players.set(player.key, player);
+        }
+
+        if (!pair.partnerNames.has(partner.key)) {
+            pair.partnerNames.set(partner.key, partner.displayName);
+        }
+
+        if (pairWeight.text) {
+            pair.pairWeightText = pairWeight.text;
+        }
+
+        if (pairWeight.isNumeric) {
+            pair.officialPairWeight = pairWeight.value;
+        }
+
+        pair.requiresManualReview = pair.requiresManualReview || pairWeight.requiresManualReview;
+    });
+
+    return [...groupedPairs.values()].map((pair, index) => {
+        const orderedKeys = [
+            ...pair.order,
+            ...[...pair.players.keys()].filter((key) => !pair.order.includes(key)),
+        ];
+
+        const teamWarning = pair.requiresManualReview
+            ? 'Classement FFT à vérifier manuellement : la colonne Poids paire indique une pondération / équivalence à calculer.'
+            : '';
+
+        const players = orderedKeys.slice(0, 2).map((key, playerIndex) => {
+            const sourcePlayer = pair.players.get(key) || {
+                key,
+                displayName: pair.partnerNames.get(key) || 'Partenaire à compléter',
+                rank: 0,
+                rawRanking: '',
+                rawRankColumn: '',
+            };
+
+            return createPlayerFromFftData(
+                sourcePlayer,
+                `J${playerIndex + 1}`,
+                pair.requiresManualReview,
+                teamWarning
+            );
+        });
+
+        const baseName = buildTeamDisplayName(players);
+        const displayName = pair.requiresManualReview
+            ? `${baseName} — ⚠️ classement à corriger`
+            : baseName;
+        const calculatedCumulativeRank = players.reduce(
+            (sum, player) => sum + (Number(player.rank) || 0),
+            0
+        );
+
+        return {
+            id: `team-fft-import-${index + 1}-${Date.now()}`,
+            number: `Équipe ${index + 1}`,
+            name: displayName,
+            fullName: displayName,
+            matchLabel: displayName,
+            players,
+            cumulativeRank: calculatedCumulativeRank,
+            officialPairWeight: pair.officialPairWeight || 0,
+            pairWeightText: pair.pairWeightText || '',
+            needsRankReview: Boolean(pair.requiresManualReview),
+            rankReviewMessage: teamWarning,
+        };
+    });
+}
+
 function parseParticipantsRows(rows) {
+    const fftTeams = parseFftRegistrationRows(rows);
+
+    if (fftTeams.length > 0) {
+        return fftTeams;
+    }
+
     const grouped = {};
 
     rows.forEach((row) => {
@@ -538,6 +772,65 @@ export function exportTournamentToXLSX(
     );
 
     XLSX.writeFile(workbook, 'matrice-padel.xlsx');
+}
+
+export function exportTournamentToXLS(
+    baseTeams,
+    pools,
+    serpentinMap,
+    finalStage,
+    finalRanking,
+    combinedPointsRanking,
+    courtCount = 4
+) {
+    const workbook = XLSX.utils.book_new();
+    const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
+    const getTeamNameById = (teamId) => teamMap.get(teamId)?.name || '';
+
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(buildBaseRows(baseTeams)), 'Base');
+    XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(buildSerpentinRows(pools, serpentinMap, teamMap)),
+        'Serpentin'
+    );
+    XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(buildPlanningRows(pools, courtCount, getTeamNameById)),
+        'Planning'
+    );
+
+    pools.forEach((pool) => {
+        XLSX.utils.book_append_sheet(
+            workbook,
+            XLSX.utils.json_to_sheet(buildPoolRankingRows(pool)),
+            sanitizeSheetName(`${pool.name} classement`)
+        );
+        XLSX.utils.book_append_sheet(
+            workbook,
+            XLSX.utils.json_to_sheet(buildPoolMatchRows(pool, getTeamNameById)),
+            sanitizeSheetName(`${pool.name} matchs`)
+        );
+    });
+
+    XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(buildFinalStageRows(finalStage, getTeamNameById)),
+        'Phase finale'
+    );
+    XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(buildCombinedRows(combinedPointsRanking)),
+        'Cumuls points'
+    );
+    XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(buildFinalRankingRows(finalRanking)),
+        'Classement final'
+    );
+
+    XLSX.writeFile(workbook, 'matrice-padel.xls', {
+        bookType: 'xls',
+    });
 }
 
 export async function importTournamentFile(file) {

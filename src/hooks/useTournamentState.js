@@ -1081,6 +1081,15 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         const file = event.target.files?.[0];
         if (!file) return;
 
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        const allowedExtensions = ['json', 'xls', 'xlsx', 'csv'];
+
+        if (!allowedExtensions.includes(extension)) {
+            alert('Format non supporté. Utilise un fichier XLS, XLSX, CSV ou JSON.');
+            event.target.value = '';
+            return;
+        }
+
         const confirmed = window.confirm(
             'Importer ce fichier va remplacer les données actuelles. Continuer ?'
         );
@@ -1091,10 +1100,10 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         }
 
         try {
-            const extension = file.name.split('.').pop()?.toLowerCase();
             const imported = extension === 'json'
                 ? await importTournamentJsonFile(file)
                 : await importTournamentFile(file);
+
             applyTournamentState(imported);
             setSelectedTournamentSaveId('');
             setTournamentSaveName('');

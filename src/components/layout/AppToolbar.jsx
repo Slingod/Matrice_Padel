@@ -5,7 +5,11 @@ import {
     FaFileImport,
     FaSave,
 } from 'react-icons/fa';
-import { exportTournamentToCSV, exportTournamentToXLSX } from '../../utils/importExport';
+import {
+    exportTournamentToCSV,
+    exportTournamentToXLS,
+    exportTournamentToXLSX,
+} from '../../utils/importExport';
 
 function AppToolbar({ ctx }) {
     const {
@@ -57,6 +61,20 @@ function AppToolbar({ ctx }) {
         if (!requireFullAccess('L’export CSV')) return;
 
         exportTournamentToCSV(
+            baseTeams,
+            pools,
+            serpentin,
+            safeFinalStage,
+            finalRanking,
+            combinedPointsRanking,
+            courtCount
+        );
+    }
+
+    function handleProtectedXlsExport() {
+        if (!requireFullAccess('L’export XLS')) return;
+
+        exportTournamentToXLS(
             baseTeams,
             pools,
             serpentin,
@@ -167,14 +185,14 @@ function AppToolbar({ ctx }) {
                     <input
                         ref={importInputRef}
                         type="file"
-                        accept=".xlsx,.csv,.json"
+                        accept=".xls,.xlsx,.csv,.json"
                         onChange={handleImportFile}
                         hidden
                     />
 
                     <button type="button" onClick={triggerImport}>
                         <FaFileImport />
-                        Importer XLSX / CSV / JSON
+                        Importer XLS / XLSX / CSV / JSON
                     </button>
 
                     <label
@@ -214,6 +232,11 @@ function AppToolbar({ ctx }) {
                     <button type="button" onClick={handleProtectedCsvExport}>
                         <FaFileCsv />
                         Exporter CSV
+                    </button>
+
+                    <button type="button" onClick={handleProtectedXlsExport}>
+                        <FaFileExcel />
+                        Exporter XLS
                     </button>
 
                     <button type="button" onClick={handleProtectedXlsxExport}>
