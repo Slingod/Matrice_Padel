@@ -77,7 +77,7 @@ function SavedTournaments({ ctx }) {
                         Ici tu peux enregistrer plusieurs tournois, repartir sur un nouveau tournoi vide,
                         puis revenir sur une ancienne sauvegarde quand tu veux. Tout reste stocké uniquement
                         sur cet appareil, sans cookie. Les scores détaillés sont sauvegardés ; la colonne S,
-                        PF, PA, Diff et Total sont recalculées automatiquement au chargement.
+                        JG, JE, Diff et Total sont recalculées automatiquement au chargement.
                     </p>
 
                     {!hasFullAccess ? (

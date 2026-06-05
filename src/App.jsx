@@ -39,10 +39,7 @@ function MainPadelingoApp() {
         'subscription',
     ].includes(activeTab);
 
-    const shouldShowShareTournamentPanel = ![
-        'saves',
-        'subscription',
-    ].includes(activeTab);
+    const shouldShowShareTournamentPanel = activeTab === 'planning';
 
     return (
         <AccessGate auth={auth}>
