@@ -29,14 +29,34 @@ function MainPadelingoApp() {
 
     const { activeTab } = ctx;
 
+    const shouldShowMatchFormatSelector = ![
+        'base',
+        'serpentin',
+        'planning',
+        'finals',
+        'final-ranking',
+        'saves',
+        'subscription',
+    ].includes(activeTab);
+
+    const shouldShowShareTournamentPanel = ![
+        'saves',
+        'subscription',
+    ].includes(activeTab);
+
     return (
         <AccessGate auth={auth}>
             <div className="app">
                 <AppHeader auth={auth} />
                 <AppToolbar ctx={ctx} />
 
-                <MatchFormatSelector ctx={ctx} />
-                <ShareTournamentPanel ctx={ctx} />
+                {shouldShowMatchFormatSelector ? (
+                    <MatchFormatSelector ctx={ctx} />
+                ) : null}
+
+                {shouldShowShareTournamentPanel ? (
+                    <ShareTournamentPanel ctx={ctx} />
+                ) : null}
 
                 {activeTab === 'base' ? (
                     <Base ctx={ctx} />
