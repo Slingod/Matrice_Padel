@@ -85,10 +85,6 @@ function MatchFormatSelector(props) {
             <div className="section-head">
                 <div>
                     <h2>Format des matchs</h2>
-                    <p className="note">
-                        Tous les matchs comptent au coefficient 1. Le format choisi sert à saisir les sets
-                        et à calculer automatiquement le score global du match.
-                    </p>
                 </div>
 
                 <label className="field match-format-selector-field">

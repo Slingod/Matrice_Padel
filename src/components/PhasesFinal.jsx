@@ -11,7 +11,6 @@ const ENTRY_ROUND_LABELS = {
 const QUALIFIER_MODE_LABELS = {
     winners: 'Meilleur de chaque poule',
     top2: '2 meilleurs de chaque poule',
-    best4: '4 meilleurs globaux',
     all: 'Toutes les équipes classées',
 };
 
@@ -31,8 +30,8 @@ function RankingTable({ title, rows, formatRank }) {
                         <th>V</th>
                         <th>D</th>
                         <th>S</th>
-<th>PF</th>
-                        <th>PA</th>
+                        <th>JG</th>
+                        <th>JE</th>
                         <th>Diff</th>
                         <th>Total</th>
                     </tr>

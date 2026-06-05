@@ -321,8 +321,8 @@ function Poule({ ctx }) {
                             <th>V</th>
                             <th>D</th>
                             <th>S</th>
-                            <th>PF</th>
-                            <th>PA</th>
+                            <th>JG</th>
+                            <th>JE</th>
                             <th>Diff</th>
                             <th>Total</th>
                         </tr>

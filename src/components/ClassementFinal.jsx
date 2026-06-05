@@ -35,9 +35,9 @@ function ClassementFinal({ ctx }) {
                 • <strong>V</strong> : victoires<br />
                 • <strong>D</strong> : défaites<br />
                 • <strong>S</strong> : différence de sets gagnés / perdus<br />
-                • <strong>PF</strong> : points marqués<br />
-                • <strong>PA</strong> : points encaissés<br />
-                • <strong>Diff</strong> : différence de points (PF - PA)<br />
+                • <strong>JG</strong> : jeux gagnés<br />
+                • <strong>JE</strong> : jeux encaissés<br />
+                • <strong>Diff</strong> : différence de jeux (JG - JE)<br />
                 • <strong>Total</strong> : valeur utilisée pour le classement
             </p>
 
@@ -52,8 +52,8 @@ function ClassementFinal({ ctx }) {
                         <th>V</th>
                         <th>D</th>
                         <th>S</th>
-                        <th>PF</th>
-                        <th>PA</th>
+                        <th>JG</th>
+                        <th>JE</th>
                         <th>Diff</th>
                         <th>Total</th>
                     </tr>
