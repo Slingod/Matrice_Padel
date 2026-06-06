@@ -57,6 +57,11 @@ function parseRowsFromSheet(sheet) {
                 const normalized = normalizeHeader(cell);
 
                 return [
+                    'section',
+                    'app',
+                    'type',
+                    'chunkindex',
+                    'chunkdata',
                     'equipe',
                     'joueur',
                     'nom',
@@ -671,6 +676,114 @@ function buildFinalRankingRows(finalRanking) {
     }));
 }
 
+const PADELINGO_STATE_SHEET_NAME = 'Padelingo State';
+const PADELINGO_STATE_SECTION = '__Padelingo_State__';
+const PADELINGO_STATE_CHUNK_SIZE = 200;
+
+function buildSpreadsheetTournamentState(
+    baseTeams,
+    pools,
+    serpentinMap,
+    finalStage,
+    courtCount = 4,
+    options = {}
+) {
+    return {
+        baseTeams: Array.isArray(baseTeams) ? baseTeams : [],
+        pools: Array.isArray(pools) ? pools : [],
+        serpentin: serpentinMap || {},
+        activeTab: options.activeTab || 'base',
+        finalStage: finalStage || createEmptyFinalStage(),
+        courtCount: Math.max(1, Number(courtCount) || 4),
+        courtLabels: Array.isArray(options.courtLabels) ? options.courtLabels : [],
+        matchFormat: options.matchFormatKey || options.matchFormat || 'D1',
+        scoringVersion: 'fft-v2-sets-priority',
+        savedSchemaVersion: 3,
+    };
+}
+
+function buildSpreadsheetSnapshot(state) {
+    return {
+        app: 'Padelingo',
+        type: 'spreadsheet-backup',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        note: 'Technical backup used by Padelingo to restore teams, pools, matches, scores, formats and final stage from XLS/XLSX/CSV exports.',
+        state,
+    };
+}
+
+function buildSpreadsheetStateRows(state) {
+    const json = JSON.stringify(buildSpreadsheetSnapshot(state));
+    const chunks = [];
+
+    for (let index = 0; index < json.length; index += PADELINGO_STATE_CHUNK_SIZE) {
+        chunks.push(json.slice(index, index + PADELINGO_STATE_CHUNK_SIZE));
+    }
+
+    return chunks.map((chunk, index) => ({
+        Section: PADELINGO_STATE_SECTION,
+        App: 'Padelingo',
+        Type: 'spreadsheet-backup',
+        Version: 3,
+        ChunkIndex: index + 1,
+        ChunkTotal: chunks.length,
+        ChunkData: chunk,
+    }));
+}
+
+function appendSpreadsheetStateSheet(workbook, state) {
+    const stateSheet = XLSX.utils.json_to_sheet(buildSpreadsheetStateRows(state));
+
+    XLSX.utils.book_append_sheet(workbook, stateSheet, PADELINGO_STATE_SHEET_NAME);
+
+    const sheetIndex = workbook.SheetNames.indexOf(PADELINGO_STATE_SHEET_NAME);
+    if (sheetIndex >= 0) {
+        workbook.Workbook = workbook.Workbook || {};
+        workbook.Workbook.Sheets = workbook.Workbook.Sheets || [];
+        workbook.Workbook.Sheets[sheetIndex] = {
+            ...(workbook.Workbook.Sheets[sheetIndex] || {}),
+            Hidden: 1,
+        };
+    }
+}
+
+function parseSpreadsheetSnapshotRows(rows = []) {
+    const stateRows = rows
+        .filter((row) => normalizeText(row.Section) === PADELINGO_STATE_SECTION)
+        .sort((a, b) => (Number(a.ChunkIndex) || 0) - (Number(b.ChunkIndex) || 0));
+
+    if (!stateRows.length) return null;
+
+    const json = stateRows.map((row) => String(row.ChunkData || '')).join('');
+
+    try {
+        const snapshot = JSON.parse(json);
+        if (snapshot?.app !== 'Padelingo' || snapshot?.type !== 'spreadsheet-backup') {
+            return null;
+        }
+
+        return snapshot.state || null;
+    } catch (error) {
+        console.error('Unable to parse Padelingo spreadsheet backup:', error);
+        return null;
+    }
+}
+
+function readSpreadsheetStateFromWorkbook(workbook) {
+    const stateSheetName = workbook.SheetNames.find(
+        (name) => normalizeHeader(name) === normalizeHeader(PADELINGO_STATE_SHEET_NAME)
+    );
+
+    if (!stateSheetName) return null;
+
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[stateSheetName], {
+        defval: '',
+    });
+
+    return parseSpreadsheetSnapshotRows(rows);
+}
+
 export function exportTournamentToCSV(
     baseTeams,
     pools,
@@ -678,12 +791,22 @@ export function exportTournamentToCSV(
     finalStage,
     finalRanking,
     combinedPointsRanking,
-    courtCount = 4
+    courtCount = 4,
+    exportOptions = {}
 ) {
     const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
     const getTeamNameById = (teamId) => teamMap.get(teamId)?.name || '';
+    const spreadsheetState = buildSpreadsheetTournamentState(
+        baseTeams,
+        pools,
+        serpentinMap,
+        finalStage,
+        courtCount,
+        exportOptions
+    );
 
     const rows = [];
+    buildSpreadsheetStateRows(spreadsheetState).forEach((row) => rows.push(row));
     buildBaseRows(baseTeams).forEach((row) => rows.push({ Section: 'Base', ...row }));
     buildSerpentinRows(pools, serpentinMap, teamMap).forEach((row) =>
         rows.push({ Section: 'Serpentin', ...row })
@@ -717,14 +840,15 @@ export function exportTournamentToCSV(
     downloadBlob(blob, 'matrice-padel.csv');
 }
 
-export function exportTournamentToXLSX(
+function buildSpreadsheetWorkbook(
     baseTeams,
     pools,
     serpentinMap,
     finalStage,
     finalRanking,
     combinedPointsRanking,
-    courtCount = 4
+    courtCount = 4,
+    exportOptions = {}
 ) {
     const workbook = XLSX.utils.book_new();
     const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
@@ -769,6 +893,42 @@ export function exportTournamentToXLSX(
         workbook,
         XLSX.utils.json_to_sheet(buildFinalRankingRows(finalRanking)),
         'Classement final'
+    );
+
+    appendSpreadsheetStateSheet(
+        workbook,
+        buildSpreadsheetTournamentState(
+            baseTeams,
+            pools,
+            serpentinMap,
+            finalStage,
+            courtCount,
+            exportOptions
+        )
+    );
+
+    return workbook;
+}
+
+export function exportTournamentToXLSX(
+    baseTeams,
+    pools,
+    serpentinMap,
+    finalStage,
+    finalRanking,
+    combinedPointsRanking,
+    courtCount = 4,
+    exportOptions = {}
+) {
+    const workbook = buildSpreadsheetWorkbook(
+        baseTeams,
+        pools,
+        serpentinMap,
+        finalStage,
+        finalRanking,
+        combinedPointsRanking,
+        courtCount,
+        exportOptions
     );
 
     XLSX.writeFile(workbook, 'matrice-padel.xlsx');
@@ -781,51 +941,18 @@ export function exportTournamentToXLS(
     finalStage,
     finalRanking,
     combinedPointsRanking,
-    courtCount = 4
+    courtCount = 4,
+    exportOptions = {}
 ) {
-    const workbook = XLSX.utils.book_new();
-    const teamMap = new Map(baseTeams.map((team) => [team.id, team]));
-    const getTeamNameById = (teamId) => teamMap.get(teamId)?.name || '';
-
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(buildBaseRows(baseTeams)), 'Base');
-    XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.json_to_sheet(buildSerpentinRows(pools, serpentinMap, teamMap)),
-        'Serpentin'
-    );
-    XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.json_to_sheet(buildPlanningRows(pools, courtCount, getTeamNameById)),
-        'Planning'
-    );
-
-    pools.forEach((pool) => {
-        XLSX.utils.book_append_sheet(
-            workbook,
-            XLSX.utils.json_to_sheet(buildPoolRankingRows(pool)),
-            sanitizeSheetName(`${pool.name} classement`)
-        );
-        XLSX.utils.book_append_sheet(
-            workbook,
-            XLSX.utils.json_to_sheet(buildPoolMatchRows(pool, getTeamNameById)),
-            sanitizeSheetName(`${pool.name} matchs`)
-        );
-    });
-
-    XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.json_to_sheet(buildFinalStageRows(finalStage, getTeamNameById)),
-        'Phase finale'
-    );
-    XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.json_to_sheet(buildCombinedRows(combinedPointsRanking)),
-        'Cumuls points'
-    );
-    XLSX.utils.book_append_sheet(
-        workbook,
-        XLSX.utils.json_to_sheet(buildFinalRankingRows(finalRanking)),
-        'Classement final'
+    const workbook = buildSpreadsheetWorkbook(
+        baseTeams,
+        pools,
+        serpentinMap,
+        finalStage,
+        finalRanking,
+        combinedPointsRanking,
+        courtCount,
+        exportOptions
     );
 
     XLSX.writeFile(workbook, 'matrice-padel.xls', {
@@ -838,11 +965,21 @@ export async function importTournamentFile(file) {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
 
+    const spreadsheetState = readSpreadsheetStateFromWorkbook(workbook);
+    if (spreadsheetState) {
+        return spreadsheetState;
+    }
+
     let rows = [];
 
     if (extension === 'csv') {
         const firstSheetName = workbook.SheetNames[0];
         rows = parseRowsFromSheet(workbook.Sheets[firstSheetName]);
+
+        const csvSpreadsheetState = parseSpreadsheetSnapshotRows(rows);
+        if (csvSpreadsheetState) {
+            return csvSpreadsheetState;
+        }
     } else {
         const participantsSheetName =
             workbook.SheetNames.find((name) => normalizeHeader(name) === 'participants') ||

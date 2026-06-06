@@ -19,6 +19,7 @@ function AppToolbar({ ctx }) {
         courtCount,
         courtLabels,
         finalRanking,
+        matchFormatKey,
         handleAddPool,
         handleCourtLabelChange,
         handleExportJson,
@@ -67,7 +68,12 @@ function AppToolbar({ ctx }) {
             safeFinalStage,
             finalRanking,
             combinedPointsRanking,
-            courtCount
+            courtCount,
+            {
+                activeTab,
+                courtLabels,
+                matchFormatKey,
+            }
         );
     }
 
@@ -81,7 +87,12 @@ function AppToolbar({ ctx }) {
             safeFinalStage,
             finalRanking,
             combinedPointsRanking,
-            courtCount
+            courtCount,
+            {
+                activeTab,
+                courtLabels,
+                matchFormatKey,
+            }
         );
     }
 
@@ -95,7 +106,12 @@ function AppToolbar({ ctx }) {
             safeFinalStage,
             finalRanking,
             combinedPointsRanking,
-            courtCount
+            courtCount,
+            {
+                activeTab,
+                courtLabels,
+                matchFormatKey,
+            }
         );
     }
 
