@@ -1112,14 +1112,29 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                     ? await importTournamentJsonFile(file)
                     : await importTournamentFile(file);
 
+            const normalizedImportedState = {
+                ...imported,
+                baseTeams: Array.isArray(imported?.baseTeams) ? imported.baseTeams : [],
+                pools: Array.isArray(imported?.pools) ? imported.pools : [],
+                serpentin: imported?.serpentin || {},
+                finalStage: imported?.finalStage || createEmptyFinalStage(),
+                courtCount: Math.max(1, Number(imported?.courtCount) || 4),
+                courtLabels: normalizeCourtLabels(
+                    imported?.courtLabels,
+                    imported?.courtCount || 4
+                ),
+                matchFormat: imported?.matchFormat || imported?.format || DEFAULT_MATCH_FORMAT,
+                scoringVersion: imported?.scoringVersion || 'fft-v2-sets-priority',
+                savedSchemaVersion: imported?.savedSchemaVersion || 3,
+                activeTab: 'base',
+            };
+
             alert(
-                `Import lu : ${(imported?.baseTeams || []).length} équipe(s), ${(imported?.pools || []).length} poule(s).`
+                `Import lu : ${normalizedImportedState.baseTeams.length} équipe(s), ${normalizedImportedState.pools.length} poule(s).`
             );
 
-            applyTournamentState({
-                ...imported,
-                activeTab: 'base',
-            });
+            saveAppState(normalizedImportedState);
+            applyTournamentState(normalizedImportedState);
 
             setActiveTab('base');
             setSelectedTournamentSaveId('');
@@ -1127,7 +1142,7 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
             setSaveNotice({
                 type: 'success',
                 title: 'Import terminé',
-                message: 'Le tournoi importé est maintenant chargé dans l’application.',
+                message: `Import chargé : ${normalizedImportedState.baseTeams.length} équipe(s), ${normalizedImportedState.pools.length} poule(s).`,
             });
 
             window.setTimeout(() => {
