@@ -36,7 +36,6 @@ function AppToolbar({ ctx }) {
         setCourtCount,
         setIsCourtSettingsOpen,
         setNewPoolName,
-        triggerImport,
     } = ctx;
 
     const hasFullAccess = Boolean(ctx.auth?.hasFullAccess);
@@ -198,18 +197,16 @@ function AppToolbar({ ctx }) {
                 </form>
 
                 <div className="export-actions">
-                    <input
-                        ref={importInputRef}
-                        type="file"
-                        accept=".xls,.xlsx,.csv,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/json"
-                        onChange={handleImportFile}
-                        className="visually-hidden-file-input"
-                    />
-
-                    <button type="button" onClick={triggerImport}>
+                    <label className="import-file-button">
+                        <input
+                            ref={importInputRef}
+                            type="file"
+                            accept=".xls,.xlsx,.csv,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/json"
+                            onChange={handleImportFile}
+                        />
                         <FaFileImport />
-                        Importer XLS / XLSX / CSV / JSON
-                    </button>
+                        <span>Importer XLS / XLSX / CSV / JSON</span>
+                    </label>
 
                     <label
                         style={{
