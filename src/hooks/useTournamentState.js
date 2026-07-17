@@ -1081,6 +1081,8 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         const input = event.target;
         const file = input.files?.[0];
 
+        alert(`Fichier détecté : ${file?.name || 'aucun fichier'}`);
+
         if (!file) {
             input.value = '';
             return;
@@ -1110,6 +1112,10 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                     ? await importTournamentJsonFile(file)
                     : await importTournamentFile(file);
 
+            alert(
+                `Import lu : ${(imported?.baseTeams || []).length} équipe(s), ${(imported?.pools || []).length} poule(s).`
+            );
+
             applyTournamentState({
                 ...imported,
                 activeTab: 'base',
@@ -1128,8 +1134,6 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }, 100);
         } catch (error) {
-            console.error('Import error:', error);
-
             const message =
                 error?.message ||
                 error?.toString?.() ||
