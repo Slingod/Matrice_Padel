@@ -87,6 +87,12 @@ export function useTournamentState() {
     const [newBaseDraft, setNewBaseDraft] = useState(() => getInitialDraftFromTeam({}));
 
     const importInputRef = useRef(null);
+    const importInProgressRef = useRef(false);
+    const importHandlerRef = useRef(null);
+    const lastImportAttemptRef = useRef({
+        signature: '',
+        timestamp: 0,
+    });
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -1078,15 +1084,30 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
     }
 
     async function handleImportFile(event) {
-        const input = event.target;
-        const file = input.files?.[0];
+        const input = event?.currentTarget || event?.target || importInputRef.current;
+        const file = input?.files?.[0];
 
-        alert(`Fichier détecté : ${file?.name || 'aucun fichier'}`);
-
-        if (!file) {
-            input.value = '';
+        if (!input || !file) {
             return;
         }
+
+        const signature = `${file.name}:${file.size}:${file.lastModified}`;
+        const now = Date.now();
+        const previousAttempt = lastImportAttemptRef.current;
+
+        if (
+            importInProgressRef.current ||
+            (previousAttempt.signature === signature &&
+                now - previousAttempt.timestamp < 1500)
+        ) {
+            return;
+        }
+
+        importInProgressRef.current = true;
+        lastImportAttemptRef.current = {
+            signature,
+            timestamp: now,
+        };
 
         const extension = file.name.split('.').pop()?.toLowerCase();
         const allowedExtensions = ['json', 'xls', 'xlsx', 'csv'];
@@ -1094,6 +1115,7 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         if (!allowedExtensions.includes(extension)) {
             alert('Format non supporté. Utilise un fichier XLS, XLSX, CSV ou JSON.');
             input.value = '';
+            importInProgressRef.current = false;
             return;
         }
 
@@ -1103,10 +1125,15 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
 
         if (!confirmed) {
             input.value = '';
+            importInProgressRef.current = false;
             return;
         }
 
         try {
+            // Give mobile browsers time to fully close the native file picker
+            // before starting the XLS/XLSX parsing work.
+            await new Promise((resolve) => window.setTimeout(resolve, 50));
+
             const imported =
                 extension === 'json'
                     ? await importTournamentJsonFile(file)
@@ -1114,38 +1141,89 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
 
             const normalizedImportedState = {
                 ...imported,
-                baseTeams: Array.isArray(imported?.baseTeams) ? imported.baseTeams : [],
-                pools: Array.isArray(imported?.pools) ? imported.pools : [],
-                serpentin: imported?.serpentin || {},
+                baseTeams: Array.isArray(imported?.baseTeams)
+                    ? imported.baseTeams
+                    : [],
+                pools: Array.isArray(imported?.pools)
+                    ? imported.pools
+                    : [],
+                serpentin:
+                    imported?.serpentin && typeof imported.serpentin === 'object'
+                        ? imported.serpentin
+                        : {},
                 finalStage: imported?.finalStage || createEmptyFinalStage(),
                 courtCount: Math.max(1, Number(imported?.courtCount) || 4),
-                courtLabels: normalizeCourtLabels(imported?.courtLabels, imported?.courtCount || 4),
-                matchFormat: imported?.matchFormat || imported?.format || DEFAULT_MATCH_FORMAT,
+                courtLabels: normalizeCourtLabels(
+                    imported?.courtLabels,
+                    imported?.courtCount || 4
+                ),
+                matchFormat:
+                    imported?.matchFormat ||
+                    imported?.format ||
+                    DEFAULT_MATCH_FORMAT,
+                scoringVersion:
+                    imported?.scoringVersion || 'fft-v2-sets-priority',
+                savedSchemaVersion:
+                    Number(imported?.savedSchemaVersion) || 3,
                 activeTab: 'base',
             };
 
-            alert(
-                `Import lu : ${normalizedImportedState.baseTeams.length} équipe(s), ${normalizedImportedState.pools.length} poule(s).`
-            );
+            if (normalizedImportedState.baseTeams.length === 0) {
+                throw new Error(
+                    "Le fichier a été lu, mais aucune équipe exploitable n'a été trouvée."
+                );
+            }
 
-            saveAppState(normalizedImportedState);
+            // Update React first so the imported teams appear immediately.
+            applyTournamentState(normalizedImportedState);
 
+            // Persist the same normalized state for refreshes and PWA restarts.
+            const savedAt = saveAppState(normalizedImportedState);
+            setLastSavedAt(savedAt);
+
+            // Read the saved state back immediately. This catches storage problems
+            // that can otherwise fail silently on some mobile/privacy configurations.
+            const storedState = loadAppState();
+            const storedTeamsCount = Array.isArray(storedState?.baseTeams)
+                ? storedState.baseTeams.length
+                : 0;
+
+            if (storedTeamsCount !== normalizedImportedState.baseTeams.length) {
+                throw new Error(
+                    `La sauvegarde locale mobile est incomplète : ` +
+                    `${storedTeamsCount}/${normalizedImportedState.baseTeams.length} équipe(s) retrouvée(s).`
+                );
+            }
+
+            setActiveTab('base');
             setSelectedTournamentSaveId('');
             setTournamentSaveName('');
             setSaveNotice({
                 type: 'success',
                 title: 'Import terminé',
-                message: `Import chargé : ${normalizedImportedState.baseTeams.length} équipe(s), ${normalizedImportedState.pools.length} poule(s).`,
+                message:
+                    `${normalizedImportedState.baseTeams.length} équipe(s) et ` +
+                    `${normalizedImportedState.pools.length} poule(s) chargée(s).`,
             });
 
-            alert(
-                'Import sauvegardé. Padelingo va recharger la page pour afficher le tournoi importé.'
-            );
+            window.requestAnimationFrame(() => {
+                window.setTimeout(() => {
+                    const baseSection =
+                        document.querySelector('.base-section-head') ||
+                        document.querySelector('.base-section') ||
+                        document.querySelector('.card.full-width');
 
-            window.setTimeout(() => {
-                window.location.reload();
-            }, 300);
+                    if (baseSection?.scrollIntoView) {
+                        baseSection.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start',
+                        });
+                    }
+                }, 100);
+            });
         } catch (error) {
+            console.error('Tournament import error:', error);
+
             const message =
                 error?.message ||
                 error?.toString?.() ||
@@ -1157,11 +1235,132 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
             );
         } finally {
             input.value = '';
+
+            window.setTimeout(() => {
+                importInProgressRef.current = false;
+            }, 250);
         }
     }
 
+    importHandlerRef.current = handleImportFile;
+
+    /*
+     * Mobile fallback:
+     * React's synthetic onChange is reliable on desktop, but some Android file
+     * pickers and privacy-focused browsers can return to the page without
+     * forwarding that event correctly. Native listeners plus focus/visibility
+     * checks recover the selected File directly from the input element.
+     */
+    useEffect(() => {
+        const input = importInputRef.current;
+
+        if (!input) {
+            return undefined;
+        }
+
+        let isDisposed = false;
+        const pendingTimeouts = new Set();
+
+        const scheduleFileCheck = (delay = 0) => {
+            const timeoutId = window.setTimeout(() => {
+                pendingTimeouts.delete(timeoutId);
+
+                if (
+                    isDisposed ||
+                    importInProgressRef.current ||
+                    !input.files?.length
+                ) {
+                    return;
+                }
+
+                importHandlerRef.current?.({
+                    currentTarget: input,
+                    target: input,
+                    type: 'native-mobile-file-selection',
+                });
+            }, delay);
+
+            pendingTimeouts.add(timeoutId);
+        };
+
+        const handleNativeFileEvent = () => {
+            scheduleFileCheck(0);
+        };
+
+        const handlePickerReturn = () => {
+            scheduleFileCheck(0);
+            scheduleFileCheck(120);
+            scheduleFileCheck(350);
+        };
+
+        const resetBeforePicker = () => {
+            if (importInProgressRef.current) return;
+
+            input.value = '';
+            lastImportAttemptRef.current = {
+                signature: '',
+                timestamp: 0,
+            };
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                handlePickerReturn();
+            }
+        };
+
+        input.addEventListener('change', handleNativeFileEvent);
+        input.addEventListener('input', handleNativeFileEvent);
+        input.addEventListener('cancel', handlePickerReturn);
+        input.addEventListener('click', resetBeforePicker, true);
+        window.addEventListener('focus', handlePickerReturn);
+        window.addEventListener('pageshow', handlePickerReturn);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            isDisposed = true;
+
+            pendingTimeouts.forEach((timeoutId) => {
+                window.clearTimeout(timeoutId);
+            });
+            pendingTimeouts.clear();
+
+            input.removeEventListener('change', handleNativeFileEvent);
+            input.removeEventListener('input', handleNativeFileEvent);
+            input.removeEventListener('cancel', handlePickerReturn);
+            input.removeEventListener('click', resetBeforePicker, true);
+            window.removeEventListener('focus', handlePickerReturn);
+            window.removeEventListener('pageshow', handlePickerReturn);
+            document.removeEventListener(
+                'visibilitychange',
+                handleVisibilityChange
+            );
+        };
+    });
+
     function triggerImport() {
-        importInputRef.current?.click();
+        const input = importInputRef.current;
+
+        if (!input || importInProgressRef.current) {
+            return;
+        }
+
+        input.value = '';
+        lastImportAttemptRef.current = {
+            signature: '',
+            timestamp: 0,
+        };
+
+        try {
+            if (typeof input.showPicker === 'function') {
+                input.showPicker();
+                return;
+            }
+        } catch (error) {
+            console.warn('Native file picker unavailable, using click fallback:', error);
+        }
+
+        input.click();
     }
 
     function handleResetLocalData() {
