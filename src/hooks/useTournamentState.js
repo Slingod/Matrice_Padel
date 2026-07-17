@@ -1119,13 +1119,8 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 serpentin: imported?.serpentin || {},
                 finalStage: imported?.finalStage || createEmptyFinalStage(),
                 courtCount: Math.max(1, Number(imported?.courtCount) || 4),
-                courtLabels: normalizeCourtLabels(
-                    imported?.courtLabels,
-                    imported?.courtCount || 4
-                ),
+                courtLabels: normalizeCourtLabels(imported?.courtLabels, imported?.courtCount || 4),
                 matchFormat: imported?.matchFormat || imported?.format || DEFAULT_MATCH_FORMAT,
-                scoringVersion: imported?.scoringVersion || 'fft-v2-sets-priority',
-                savedSchemaVersion: imported?.savedSchemaVersion || 3,
                 activeTab: 'base',
             };
 
@@ -1134,9 +1129,7 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
             );
 
             saveAppState(normalizedImportedState);
-            applyTournamentState(normalizedImportedState);
 
-            setActiveTab('base');
             setSelectedTournamentSaveId('');
             setTournamentSaveName('');
             setSaveNotice({
@@ -1145,9 +1138,13 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 message: `Import chargé : ${normalizedImportedState.baseTeams.length} équipe(s), ${normalizedImportedState.pools.length} poule(s).`,
             });
 
+            alert(
+                'Import sauvegardé. Padelingo va recharger la page pour afficher le tournoi importé.'
+            );
+
             window.setTimeout(() => {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }, 100);
+                window.location.reload();
+            }, 300);
         } catch (error) {
             const message =
                 error?.message ||
