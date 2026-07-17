@@ -83,7 +83,11 @@ function SubscriptionRequiredPage({ auth }) {
 }
 
 function AccessGate({ auth, children }) {
-    if (auth.isLoading) {
+    const isInitialAccessCheck =
+        auth.isLoading &&
+        (!auth.isAuthenticated || !auth.accessStatus);
+
+    if (isInitialAccessCheck) {
         return <LoadingAccessPage />;
     }
 

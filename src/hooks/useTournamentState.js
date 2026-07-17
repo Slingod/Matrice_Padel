@@ -80,6 +80,10 @@ export function useTournamentState() {
     const [savedTournaments, setSavedTournaments] = useState(() => getSavedTournaments());
     const [selectedTournamentSaveId, setSelectedTournamentSaveId] = useState('');
     const [tournamentSaveName, setTournamentSaveName] = useState('');
+    const [importStatus, setImportStatus] = useState({
+        type: 'idle',
+        message: 'Aucun import en cours.',
+    });
 
     const [newPoolName, setNewPoolName] = useState('');
     const [editingBaseTeamId, setEditingBaseTeamId] = useState(null);
@@ -1108,12 +1112,18 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
             signature,
             timestamp: now,
         };
+        setImportStatus({
+            type: 'loading',
+            message: `Lecture de ${file.name}…`,
+        });
 
         const extension = file.name.split('.').pop()?.toLowerCase();
         const allowedExtensions = ['json', 'xls', 'xlsx', 'csv'];
 
         if (!allowedExtensions.includes(extension)) {
-            alert('Format non supporté. Utilise un fichier XLS, XLSX, CSV ou JSON.');
+            const message = 'Format non supporté. Utilise un fichier XLS, XLSX, CSV ou JSON.';
+            setImportStatus({ type: 'error', message });
+            alert(message);
             input.value = '';
             importInProgressRef.current = false;
             return;
@@ -1124,6 +1134,10 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         );
 
         if (!confirmed) {
+            setImportStatus({
+                type: 'idle',
+                message: 'Import annulé.',
+            });
             input.value = '';
             importInProgressRef.current = false;
             return;
@@ -1138,6 +1152,11 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 extension === 'json'
                     ? await importTournamentJsonFile(file)
                     : await importTournamentFile(file);
+
+            setImportStatus({
+                type: 'loading',
+                message: `${file.name} a été lu. Préparation du tournoi…`,
+            });
 
             const normalizedImportedState = {
                 ...imported,
@@ -1198,12 +1217,18 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
             setActiveTab('base');
             setSelectedTournamentSaveId('');
             setTournamentSaveName('');
+            const successMessage =
+                `${normalizedImportedState.baseTeams.length} équipe(s) et ` +
+                `${normalizedImportedState.pools.length} poule(s) chargée(s) depuis ${file.name}.`;
+
+            setImportStatus({
+                type: 'success',
+                message: successMessage,
+            });
             setSaveNotice({
                 type: 'success',
                 title: 'Import terminé',
-                message:
-                    `${normalizedImportedState.baseTeams.length} équipe(s) et ` +
-                    `${normalizedImportedState.pools.length} poule(s) chargée(s).`,
+                message: successMessage,
             });
 
             window.requestAnimationFrame(() => {
@@ -1228,6 +1253,11 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 error?.message ||
                 error?.toString?.() ||
                 "Erreur inconnue pendant l'import.";
+
+            setImportStatus({
+                type: 'error',
+                message: `Échec de l’import : ${message}`,
+            });
 
             alert(
                 "Impossible d'importer ce fichier sur cet appareil.\n\n" +
@@ -1475,6 +1505,7 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         handleAddPool,
         handleCourtLabelChange,
         handleImportFile,
+        importStatus,
         handleResetLocalData,
         importInputRef,
         lastSavedAt,

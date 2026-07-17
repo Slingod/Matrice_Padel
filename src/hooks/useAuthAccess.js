@@ -45,6 +45,7 @@ export function useAuthAccess() {
     const [user, setUser] = useState(null);
     const [accessStatus, setAccessStatus] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
     const loadAccessStatus = useCallback(async (currentSession) => {
@@ -58,7 +59,6 @@ export function useAuthAccess() {
         if (error) {
             console.error('Access status error:', error);
             setErrorMessage(error.message || 'Unable to load access status.');
-            setAccessStatus(null);
             return null;
         }
 
@@ -67,53 +67,83 @@ export function useAuthAccess() {
         return normalized;
     }, []);
 
-    const refreshAuthState = useCallback(async () => {
-        setIsLoading(true);
-        setErrorMessage('');
+    const refreshAuthState = useCallback(
+        async ({ blockInterface = false } = {}) => {
+            if (blockInterface) {
+                setIsLoading(true);
+            } else {
+                setIsRefreshing(true);
+            }
 
-        try {
-            const { data, error } = await supabase.auth.getSession();
+            setErrorMessage('');
 
-            if (error) {
-                console.error('Session error:', error);
-                setErrorMessage(error.message || 'Unable to load session.');
+            try {
+                const { data, error } = await supabase.auth.getSession();
+
+                if (error) {
+                    console.error('Session error:', error);
+                    setErrorMessage(error.message || 'Unable to load session.');
+                    setSession(null);
+                    setUser(null);
+                    setAccessStatus(null);
+                    return null;
+                }
+
+                const currentSession = data.session || null;
+
+                setSession(currentSession);
+                setUser(currentSession?.user || null);
+
+                await loadAccessStatus(currentSession);
+                return currentSession;
+            } catch (error) {
+                console.error('Unexpected auth error:', error);
+                setErrorMessage(error?.message || 'Unexpected authentication error.');
                 setSession(null);
                 setUser(null);
                 setAccessStatus(null);
-                return;
+                return null;
+            } finally {
+                if (blockInterface) {
+                    setIsLoading(false);
+                }
+                setIsRefreshing(false);
             }
+        },
+        [loadAccessStatus]
+    );
 
-            const currentSession = data.session || null;
-
-            setSession(currentSession);
-            setUser(currentSession?.user || null);
-
-            await loadAccessStatus(currentSession);
-        } catch (error) {
-            console.error('Unexpected auth error:', error);
-            setErrorMessage(error?.message || 'Unexpected authentication error.');
-            setSession(null);
-            setUser(null);
-            setAccessStatus(null);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [loadAccessStatus]);
+    const reloadAccessStatus = useCallback(
+        () => refreshAuthState({ blockInterface: false }),
+        [refreshAuthState]
+    );
 
     useEffect(() => {
-        refreshAuthState();
+        refreshAuthState({ blockInterface: true });
 
         const {
             data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        } = supabase.auth.onAuthStateChange((event, nextSession) => {
             setSession(nextSession);
             setUser(nextSession?.user || null);
             setErrorMessage('');
 
-            // Important:
-            // Keep Supabase calls outside the synchronous auth callback stack.
+            if (!nextSession?.user) {
+                setAccessStatus(null);
+                setIsLoading(false);
+                setIsRefreshing(false);
+                return;
+            }
+
+            /*
+             * TOKEN_REFRESHED and other background auth events can happen when a
+             * mobile file picker sends the browser to the background. Never switch
+             * the whole application back to the loading screen here: doing so would
+             * unmount the <input type="file"> before Android returns the selected
+             * File object to the page.
+             */
             window.setTimeout(async () => {
-                setIsLoading(true);
+                setIsRefreshing(true);
 
                 try {
                     await loadAccessStatus(nextSession);
@@ -121,9 +151,14 @@ export function useAuthAccess() {
                     console.error('Auth state access reload error:', error);
                     setErrorMessage(error?.message || 'Unable to refresh access status.');
                 } finally {
+                    setIsRefreshing(false);
                     setIsLoading(false);
                 }
             }, 0);
+
+            if (event === 'SIGNED_OUT') {
+                setAccessStatus(null);
+            }
         });
 
         return () => {
@@ -164,6 +199,7 @@ export function useAuthAccess() {
         setSession(null);
         setUser(null);
         setAccessStatus(null);
+        setIsRefreshing(false);
     }
 
     return useMemo(
@@ -172,21 +208,23 @@ export function useAuthAccess() {
             user,
             accessStatus,
             isLoading,
+            isRefreshing,
             errorMessage,
             isAuthenticated: Boolean(user),
             hasAccess: Boolean(accessStatus?.hasAccess),
             hasFullAccess: Boolean(accessStatus?.hasFullAccess),
             signInWithGoogle,
             signOut,
-            reloadAccessStatus: refreshAuthState,
+            reloadAccessStatus,
         }),
         [
             session,
             user,
             accessStatus,
             isLoading,
+            isRefreshing,
             errorMessage,
-            refreshAuthState,
+            reloadAccessStatus,
         ]
     );
 }

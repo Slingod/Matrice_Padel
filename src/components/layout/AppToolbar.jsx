@@ -25,6 +25,7 @@ function AppToolbar({ ctx }) {
         handleExportJson,
         handleImportFile,
         importInputRef,
+        importStatus,
         isCourtSettingsOpen,
         newPoolName,
         pools,
@@ -211,10 +212,19 @@ function AppToolbar({ ctx }) {
                             onClick={(event) => {
                                 event.currentTarget.value = '';
                             }}
+                            onInput={handleImportFile}
                             onChange={handleImportFile}
                         />
 
                         <small>Formats acceptés : XLS, XLSX, CSV ou JSON</small>
+
+                        <p
+                            className={`native-import-status ${importStatus?.type || 'idle'}`}
+                            role="status"
+                            aria-live="polite"
+                        >
+                            {importStatus?.message || 'Aucun import en cours.'}
+                        </p>
                     </div>
 
                     <label
