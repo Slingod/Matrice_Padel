@@ -201,9 +201,9 @@ function AppToolbar({ ctx }) {
                     <input
                         ref={importInputRef}
                         type="file"
-                        accept=".xls,.xlsx,.csv,.json"
+                        accept=".xls,.xlsx,.csv,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/json"
                         onChange={handleImportFile}
-                        hidden
+                        className="visually-hidden-file-input"
                     />
 
                     <button type="button" onClick={triggerImport}>

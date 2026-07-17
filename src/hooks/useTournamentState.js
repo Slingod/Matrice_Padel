@@ -1078,15 +1078,20 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
     }
 
     async function handleImportFile(event) {
-        const file = event.target.files?.[0];
-        if (!file) return;
+        const input = event.target;
+        const file = input.files?.[0];
+
+        if (!file) {
+            input.value = '';
+            return;
+        }
 
         const extension = file.name.split('.').pop()?.toLowerCase();
         const allowedExtensions = ['json', 'xls', 'xlsx', 'csv'];
 
         if (!allowedExtensions.includes(extension)) {
             alert('Format non supporté. Utilise un fichier XLS, XLSX, CSV ou JSON.');
-            event.target.value = '';
+            input.value = '';
             return;
         }
 
@@ -1095,14 +1100,15 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
         );
 
         if (!confirmed) {
-            event.target.value = '';
+            input.value = '';
             return;
         }
 
         try {
-            const imported = extension === 'json'
-                ? await importTournamentJsonFile(file)
-                : await importTournamentFile(file);
+            const imported =
+                extension === 'json'
+                    ? await importTournamentJsonFile(file)
+                    : await importTournamentFile(file);
 
             applyTournamentState(imported);
             setSelectedTournamentSaveId('');
@@ -1113,11 +1119,11 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 message: 'Le tournoi importé est maintenant chargé dans l’application.',
             });
         } catch (error) {
-            console.error(error);
+            console.error('Import error:', error);
             alert("Impossible d'importer ce fichier.");
+        } finally {
+            input.value = '';
         }
-
-        event.target.value = '';
     }
 
     function triggerImport() {

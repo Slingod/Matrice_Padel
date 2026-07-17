@@ -1629,3 +1629,11 @@ tbody td select {
 .paypal-button-zone iframe {
   border-radius: 12px;
 }
+
+.visually-hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
