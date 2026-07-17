@@ -1110,7 +1110,12 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                     ? await importTournamentJsonFile(file)
                     : await importTournamentFile(file);
 
-            applyTournamentState(imported);
+            applyTournamentState({
+                ...imported,
+                activeTab: 'base',
+            });
+
+            setActiveTab('base');
             setSelectedTournamentSaveId('');
             setTournamentSaveName('');
             setSaveNotice({
@@ -1118,9 +1123,22 @@ Cette action ne supprime pas le tournoi actuellement ouvert.`
                 title: 'Import terminé',
                 message: 'Le tournoi importé est maintenant chargé dans l’application.',
             });
+
+            window.setTimeout(() => {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }, 100);
         } catch (error) {
             console.error('Import error:', error);
-            alert("Impossible d'importer ce fichier.");
+
+            const message =
+                error?.message ||
+                error?.toString?.() ||
+                "Erreur inconnue pendant l'import.";
+
+            alert(
+                "Impossible d'importer ce fichier sur cet appareil.\n\n" +
+                `Détail technique : ${message}`
+            );
         } finally {
             input.value = '';
         }
