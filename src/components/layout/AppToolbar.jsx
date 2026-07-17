@@ -197,16 +197,25 @@ function AppToolbar({ ctx }) {
                 </form>
 
                 <div className="export-actions">
-                    <label className="import-file-button">
+                    <div className="native-import-zone">
+                        <label htmlFor="padelingo-import-file" className="native-import-label">
+                            <FaFileImport />
+                            Importer un tournoi
+                        </label>
+
                         <input
+                            id="padelingo-import-file"
                             ref={importInputRef}
                             type="file"
                             accept=".xls,.xlsx,.csv,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/json"
+                            onClick={(event) => {
+                                event.currentTarget.value = '';
+                            }}
                             onChange={handleImportFile}
                         />
-                        <FaFileImport />
-                        <span>Importer XLS / XLSX / CSV / JSON</span>
-                    </label>
+
+                        <small>Formats acceptés : XLS, XLSX, CSV ou JSON</small>
+                    </div>
 
                     <label
                         style={{
