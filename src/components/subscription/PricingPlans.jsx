@@ -6,6 +6,8 @@ const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
 
 const PLAN_IDS = {
     ja_monthly: import.meta.env.VITE_PAYPAL_JA_MONTHLY_PLAN_ID,
+    ja_6_months: import.meta.env.VITE_PAYPAL_JA_6_MONTHS_PLAN_ID,
+    ja_yearly: import.meta.env.VITE_PAYPAL_JA_YEARLY_PLAN_ID,
     club_monthly: import.meta.env.VITE_PAYPAL_CLUB_MONTHLY_PLAN_ID,
     club_6_months: import.meta.env.VITE_PAYPAL_CLUB_6_MONTHS_PLAN_ID,
     club_yearly: import.meta.env.VITE_PAYPAL_CLUB_YEARLY_PLAN_ID,
@@ -14,63 +16,106 @@ const PLAN_IDS = {
 const PRICING_PLANS = [
     {
         id: 'ja_monthly',
-        title: 'Juge-arbitre',
-        audience: 'Pour les juges-arbitres indépendants et organisateurs ponctuels.',
-        price: '29,99 €',
+        group: 'JAP',
+        title: 'JAP mensuel',
+        audience: 'Pour les juges-arbitres indépendants qui souhaitent rester flexibles.',
+        price: '25,99 €',
         billing: '/ mois · sans engagement',
-        badge: 'Individuel',
+        badge: 'Flexible',
         features: [
-            'Accès complet à Padelingo',
-            'Exports PDF / CSV / XLSX / JSON',
-            'Partage live spectateurs',
-            'Sauvegardes étendues',
+            '1 compte JAP',
+            'Gestion complète des équipes, poules, matchs et classements',
+            'Exports PDF, CSV, XLSX, XLS et JSON',
+            'Partage live spectateurs avec lien public et QR code',
+            'Sauvegarde, importation et restauration des tournois',
             'Résiliation possible chaque mois',
         ],
     },
     {
-        id: 'club_monthly',
-        title: 'Club mensuel',
-        audience: 'Pour les clubs, associations et structures qui veulent rester flexibles.',
-        price: '44,99 €',
-        billing: '/ mois · sans engagement',
-        badge: 'Club',
+        id: 'ja_6_months',
+        group: 'JAP',
+        title: 'JAP 6 mois',
+        audience: 'Pour une saison régulière avec un tarif mensuel réduit.',
+        price: '24 €',
+        billing: '/ mois pendant 6 mois · total 144 €',
+        badge: 'Économie',
         features: [
-            'Accès complet à Padelingo',
-            'Exports complets',
-            'Partage live spectateurs',
+            'Toutes les fonctionnalités de l’offre JAP',
+            '6 prélèvements mensuels de 24 €',
+            'Exports et partage live inclus',
             'Sauvegardes étendues',
-            'Sans engagement',
+            'Assistance prioritaire',
+            'Fin après le sixième cycle PayPal',
+        ],
+    },
+    {
+        id: 'ja_yearly',
+        group: 'JAP',
+        title: 'JAP annuel',
+        audience: 'Pour les juges-arbitres qui utilisent Padelingo toute l’année.',
+        price: '23 €',
+        billing: '/ mois pendant 12 mois · total 276 €',
+        badge: 'Meilleur tarif JAP',
+        highlight: true,
+        features: [
+            'Toutes les fonctionnalités de l’offre JAP',
+            '12 prélèvements mensuels de 23 €',
+            'Exports et partage live inclus',
+            'Sauvegardes étendues',
+            'Assistance prioritaire',
+            'Fin après le douzième cycle PayPal',
+        ],
+    },
+    {
+        id: 'club_monthly',
+        group: 'Club',
+        title: 'Club mensuel',
+        audience: 'Pour les clubs, associations et structures souhaitant rester flexibles.',
+        price: '35 €',
+        billing: '/ mois · sans engagement',
+        badge: 'Club flexible',
+        features: [
+            'Accès complet aux outils de gestion de tournoi',
+            'Gestion des équipes, poules, matchs et phases finales',
+            'Exports PDF, CSV, XLSX, XLS et JSON',
+            'Partage live sur téléphone, tablette, ordinateur ou télévision',
+            'Lien public en lecture seule et QR code',
+            'Résiliation possible chaque mois',
         ],
     },
     {
         id: 'club_6_months',
-        title: 'Club semestriel',
-        audience: 'Pour les clubs qui utilisent Padelingo régulièrement sur la saison.',
-        price: '209,94 €',
-        billing: '/ 6 mois · équivalent 34,99 € / mois',
-        badge: 'Économie',
+        group: 'Club',
+        title: 'Club 6 mois',
+        audience: 'Pour les clubs organisant plusieurs tournois pendant la saison.',
+        price: '33 €',
+        billing: '/ mois pendant 6 mois · total 198 €',
+        badge: 'Économie Club',
         features: [
-            'Accès complet pendant 6 mois',
-            'Prix réduit par rapport au mensuel',
-            'Exports et live inclus',
+            'Toutes les fonctionnalités de l’offre Club',
+            '6 prélèvements mensuels de 33 €',
+            'Exports et partage live inclus',
             'Sauvegardes étendues',
-            'Facturation semestrielle',
+            'Assistance prioritaire',
+            'Fin après le sixième cycle PayPal',
         ],
     },
     {
         id: 'club_yearly',
+        group: 'Club',
         title: 'Club annuel',
-        audience: 'Pour les clubs qui veulent le meilleur tarif sur l’année.',
-        price: '359,88 €',
-        billing: '/ an · équivalent 29,99 € / mois',
-        badge: 'Meilleur tarif',
+        audience: 'Pour les clubs qui utilisent Padelingo tout au long de l’année.',
+        price: '32 €',
+        billing: '/ mois pendant 12 mois · total 384 €',
+        badge: 'Meilleur tarif Club',
         highlight: true,
         features: [
-            'Accès complet pendant 1 an',
-            'Meilleur prix mensuel équivalent',
-            'Exports et live inclus',
+            'Toutes les fonctionnalités de l’offre Club',
+            '12 prélèvements mensuels de 32 €',
+            'Exports et partage live inclus',
             'Sauvegardes étendues',
-            'Facturation annuelle',
+            'Assistance prioritaire',
+            'Fin après le douzième cycle PayPal',
         ],
     },
 ];
@@ -96,10 +141,9 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
     const [isRegistering, setIsRegistering] = useState(false);
     const planId = PLAN_IDS[plan.id];
 
-    async function refreshAccessAfterWebhook() {
+    function scheduleAccessRefresh() {
         if (typeof onSubscriptionRegistered !== 'function') return;
 
-        // The PayPal webhook can take a few seconds to update Supabase.
         window.setTimeout(() => {
             onSubscriptionRegistered();
         }, 3000);
@@ -110,7 +154,10 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
     }
 
     async function handleApprove(data) {
-        const subscriptionId = data?.subscriptionID || data?.subscription_id || '';
+        const subscriptionId =
+            data?.subscriptionID ||
+            data?.subscription_id ||
+            '';
 
         console.log('PayPal subscription approved:', {
             planId,
@@ -122,11 +169,10 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
         if (!subscriptionId) {
             window.setTimeout(() => {
                 alert(
-                    'PayPal a validé le paiement, mais aucun Subscription ID n’a été reçu.\n\n' +
-                    'Regarde la console navigateur pour voir le détail.'
+                    'PayPal a validé la souscription, mais aucun identifiant ' +
+                    'd’abonnement n’a été reçu.\n\nConsulte la console du navigateur.'
                 );
             }, 0);
-
             return;
         }
 
@@ -138,27 +184,34 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
                 plan.id
             );
 
-            console.log('Pending subscription registered in Supabase:', pendingSubscription);
+            console.log(
+                'Pending subscription registered in Supabase:',
+                pendingSubscription
+            );
 
-            await refreshAccessAfterWebhook();
+            scheduleAccessRefresh();
 
             window.setTimeout(() => {
                 alert(
-                    'Abonnement PayPal Sandbox créé avec succès.\n\n' +
+                    'Abonnement PayPal créé avec succès.\n\n' +
                     `Offre : ${plan.title}\n` +
                     `Subscription ID : ${subscriptionId}\n\n` +
-                    'Ton abonnement est enregistré. Le webhook PayPal va activer ton accès automatiquement.\n\n' +
-                    'Si la page ne se débloque pas immédiatement, attends quelques secondes puis actualise.'
+                    'Padelingo attend maintenant la confirmation sécurisée du webhook PayPal. ' +
+                    'L’activation peut prendre quelques secondes.'
                 );
             }, 0);
         } catch (error) {
-            console.error('Unable to register pending subscription:', error);
+            console.error(
+                'Unable to register pending subscription:',
+                error
+            );
 
             window.setTimeout(() => {
                 alert(
-                    'L’abonnement PayPal a bien été créé, mais Padelingo n’a pas réussi à l’enregistrer.\n\n' +
+                    'L’abonnement PayPal a été créé, mais Padelingo n’a pas réussi ' +
+                    'à l’enregistrer dans Supabase.\n\n' +
                     `Subscription ID : ${subscriptionId}\n\n` +
-                    'Regarde la console navigateur pour voir le détail.'
+                    'Consulte la console du navigateur et les journaux de la fonction webhook.'
                 );
             }, 0);
         } finally {
@@ -171,15 +224,17 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
 
         window.setTimeout(() => {
             alert(
-                'Une erreur est survenue avec PayPal Sandbox.\n\n' +
-                'Regarde la console navigateur pour voir le détail.'
+                'Une erreur est survenue pendant la souscription PayPal.\n\n' +
+                'Consulte la console du navigateur pour obtenir le détail.'
             );
         }, 0);
     }
 
     return (
         <article className={`pricing-card ${plan.highlight ? 'featured' : ''}`}>
-            {plan.badge ? <span className="pricing-badge">{plan.badge}</span> : null}
+            {plan.badge ? (
+                <span className="pricing-badge">{plan.badge}</span>
+            ) : null}
 
             <h3>{plan.title}</h3>
             <p className="pricing-audience">{plan.audience}</p>
@@ -198,7 +253,7 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
             <div className="paypal-button-zone">
                 {isRegistering ? (
                     <button type="button" className="primary" disabled>
-                        Enregistrement Supabase...
+                        Enregistrement sécurisé...
                     </button>
                 ) : !planId ? (
                     <button
@@ -207,7 +262,8 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
                         onClick={() => {
                             alert(
                                 `Plan PayPal manquant pour : ${plan.title}\n\n` +
-                                'Vérifie tes variables VITE_PAYPAL_...PLAN_ID dans ton fichier .env, puis redémarre Vite.'
+                                'Vérifie la variable VITE_PAYPAL correspondante, ' +
+                                'puis redémarre Vite ou redéploie Vercel.'
                             );
                         }}
                     >
@@ -215,17 +271,18 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
                     </button>
                 ) : (
                     <PayPalButtons
+                        forceReRender={[planId]}
                         style={{
                             layout: 'vertical',
                             shape: 'pill',
                             label: 'subscribe',
                             color: 'gold',
                         }}
-                        createSubscription={(_data, actions) => {
-                            return actions.subscription.create({
+                        createSubscription={(_data, actions) =>
+                            actions.subscription.create({
                                 plan_id: planId,
-                            });
-                        }}
+                            })
+                        }
                         onApprove={handleApprove}
                         onError={handleError}
                         disabled={isRegistering}
@@ -236,17 +293,39 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
     );
 }
 
+function PricingGroup({ title, plans, onSubscriptionRegistered }) {
+    return (
+        <section className="pricing-group">
+            <h3>{title}</h3>
+
+            <div className="pricing-grid">
+                {plans.map((plan) => (
+                    <PricingCard
+                        key={plan.id}
+                        plan={plan}
+                        onSubscriptionRegistered={onSubscriptionRegistered}
+                    />
+                ))}
+            </div>
+        </section>
+    );
+}
+
 function PricingPlans({ onSubscriptionRegistered }) {
     if (!PAYPAL_CLIENT_ID) {
         return (
             <div className="empty-state">
-                <strong>PayPal Sandbox n’est pas configuré.</strong>
+                <strong>PayPal n’est pas configuré.</strong>
                 <span>
-                    Ajoute VITE_PAYPAL_CLIENT_ID dans ton fichier .env, puis redémarre Vite.
+                    Ajoute VITE_PAYPAL_CLIENT_ID dans ton environnement,
+                    puis redémarre Vite ou redéploie Vercel.
                 </span>
             </div>
         );
     }
+
+    const japPlans = PRICING_PLANS.filter((plan) => plan.group === 'JAP');
+    const clubPlans = PRICING_PLANS.filter((plan) => plan.group === 'Club');
 
     return (
         <PayPalScriptProvider
@@ -257,18 +336,20 @@ function PricingPlans({ onSubscriptionRegistered }) {
                 currency: 'EUR',
             }}
         >
-            <div className="pricing-grid">
-                {PRICING_PLANS.map((plan) => (
-                    <PricingCard
-                        key={plan.id}
-                        plan={plan}
-                        onSubscriptionRegistered={onSubscriptionRegistered}
-                    />
-                ))}
-            </div>
+            <PricingGroup
+                title="Offres JAP"
+                plans={japPlans}
+                onSubscriptionRegistered={onSubscriptionRegistered}
+            />
+
+            <PricingGroup
+                title="Offres Club"
+                plans={clubPlans}
+                onSubscriptionRegistered={onSubscriptionRegistered}
+            />
         </PayPalScriptProvider>
     );
 }
 
-export { PRICING_PLANS };
+export { PLAN_IDS, PRICING_PLANS };
 export default PricingPlans;

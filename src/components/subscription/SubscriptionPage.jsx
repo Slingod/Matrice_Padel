@@ -5,12 +5,15 @@ function SubscriptionPage({ ctx }) {
     const hasFullAccess = Boolean(auth?.hasFullAccess);
     const isTrialActive = Boolean(auth?.accessStatus?.isTrialActive);
 
-    function handleSelectPlan(plan) {
-        alert(
-            'Le paiement PayPal sera branché à la prochaine étape.\n\n' +
-            `Offre sélectionnée : ${plan.title}\n` +
-            `${plan.price} ${plan.billing}`
-        );
+    async function handleSubscriptionRegistered() {
+        if (typeof auth?.refreshAuthState === 'function') {
+            await auth.refreshAuthState();
+            return;
+        }
+
+        if (typeof auth?.refreshAccessStatus === 'function') {
+            await auth.refreshAccessStatus();
+        }
     }
 
     return (
@@ -21,34 +24,52 @@ function SubscriptionPage({ ctx }) {
                     <h2>Choisis l’offre adaptée à ton usage</h2>
 
                     <p className="note">
-                        Pendant l’essai gratuit, tu peux tester l’application. Les exports complets,
-                        les sauvegardes étendues et le partage live spectateurs sont réservés aux abonnés.
+                        Pendant l’essai gratuit, tu peux découvrir Padelingo.
+                        Les exports complets, les sauvegardes étendues et le partage
+                        live spectateurs sont réservés aux abonnés.
                     </p>
 
                     {hasFullAccess ? (
                         <p className="note">
-                            Ton compte est actuellement en accès premium : exports, live spectateurs
-                            et sauvegardes étendues sont activés.
+                            Ton compte dispose actuellement d’un accès premium :
+                            exports, live spectateurs et sauvegardes étendues sont activés.
                         </p>
                     ) : isTrialActive ? (
                         <p className="note">
-                            Ton essai gratuit est actif. Tu peux choisir une offre maintenant ou attendre
-                            la fin de l’essai.
+                            Ton essai gratuit est actif. Tu peux souscrire maintenant
+                            ou attendre la fin de la période d’essai.
                         </p>
                     ) : (
                         <p className="note">
-                            Ton essai est terminé. Choisis une offre pour retrouver l’accès complet.
+                            Ton essai est terminé. Choisis une offre pour retrouver
+                            l’accès complet à Padelingo.
                         </p>
                     )}
                 </div>
             </div>
 
-            <PricingPlans onSelectPlan={handleSelectPlan} />
+            <PricingPlans
+                onSubscriptionRegistered={handleSubscriptionRegistered}
+            />
 
-            <p className="note subscription-legal-note">
-                Les paiements PayPal sécurisés seront ajoutés à la prochaine étape.
-                Les offres Club semestrielle et annuelle sont facturées en une seule fois.
-            </p>
+            <div className="subscription-legal-note">
+                <p className="note">
+                    Les paiements sont sécurisés par PayPal.
+                    Les formules sans engagement sont renouvelées chaque mois jusqu’à résiliation.
+                </p>
+
+                <p className="note">
+                    Les formules avec engagement sont prélevées mensuellement pendant
+                    6 ou 12 mois, puis prennent fin après le dernier cycle, sous réserve
+                    que les plans PayPal soient configurés avec un nombre de cycles limité.
+                </p>
+
+                <p className="note">
+                    Les prix sont affichés en euros. Les informations fiscales applicables
+                    et les conditions de facturation doivent figurer dans les conditions
+                    générales de vente et sur les factures.
+                </p>
+            </div>
         </section>
     );
 }

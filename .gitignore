@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .env
 .env.local
+supabase/.temp/
+create-paypal-sandbox-plans.ps1
+supabase/.env.paypal.sandbox
+paypal-sandbox-plans-2026.json
