@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { PayPalButtons, PayPalScriptProvider } from '@paypal/react-paypal-js';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
 const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
@@ -120,6 +119,76 @@ const PRICING_PLANS = [
     },
 ];
 
+let paypalScriptPromise = null;
+
+function buildPayPalScriptUrl() {
+    const params = new URLSearchParams({
+        'client-id': PAYPAL_CLIENT_ID,
+        vault: 'true',
+        intent: 'subscription',
+        currency: 'EUR',
+    });
+
+    return `https://www.paypal.com/sdk/js?${params.toString()}`;
+}
+
+function removeOldPayPalScripts() {
+    Array.from(document.scripts).forEach((script) => {
+        if (script.src.includes('paypal.com/sdk/js')) {
+            script.remove();
+        }
+    });
+}
+
+function loadPayPalScript() {
+    if (typeof window === 'undefined') {
+        return Promise.reject(new Error('PayPal SDK can only be loaded in the browser.'));
+    }
+
+    if (window.paypal?.Buttons) {
+        return Promise.resolve(window.paypal);
+    }
+
+    if (paypalScriptPromise) {
+        return paypalScriptPromise;
+    }
+
+    paypalScriptPromise = new Promise((resolve, reject) => {
+        removeOldPayPalScripts();
+
+        const script = document.createElement('script');
+        script.src = buildPayPalScriptUrl();
+        script.async = true;
+        script.dataset.sdkIntegrationSource = 'padelingo-react-live';
+
+        script.addEventListener(
+            'load',
+            () => {
+                if (window.paypal?.Buttons) {
+                    resolve(window.paypal);
+                    return;
+                }
+
+                reject(new Error('PayPal SDK loaded, but window.paypal.Buttons is unavailable.'));
+            },
+            { once: true }
+        );
+
+        script.addEventListener(
+            'error',
+            () => {
+                paypalScriptPromise = null;
+                reject(new Error('Unable to load the PayPal SDK script.'));
+            },
+            { once: true }
+        );
+
+        document.body.appendChild(script);
+    });
+
+    return paypalScriptPromise;
+}
+
 async function registerPendingSubscription(subscriptionId, planKey) {
     const { data, error } = await supabase.rpc(
         'register_pending_paypal_subscription',
@@ -135,6 +204,99 @@ async function registerPendingSubscription(subscriptionId, planKey) {
     }
 
     return Array.isArray(data) ? data[0] : data;
+}
+
+function PayPalSubscriptionButton({
+                                      plan,
+                                      planId,
+                                      isRegistering,
+                                      onApprove,
+                                      onError,
+                                  }) {
+    const containerRef = useRef(null);
+    const paypalButtonsRef = useRef(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        async function renderButton() {
+            if (!containerRef.current || !planId) return;
+
+            try {
+                setIsLoading(true);
+
+                const paypal = await loadPayPalScript();
+
+                if (!isMounted || !containerRef.current) return;
+
+                containerRef.current.innerHTML = '';
+
+                const buttons = paypal.Buttons({
+                    style: {
+                        layout: 'vertical',
+                        shape: 'pill',
+                        label: 'subscribe',
+                        color: 'gold',
+                    },
+                    createSubscription: (_data, actions) =>
+                        actions.subscription.create({
+                            plan_id: planId,
+                        }),
+                    onApprove,
+                    onError,
+                });
+
+                paypalButtonsRef.current = buttons;
+
+                if (buttons.isEligible && !buttons.isEligible()) {
+                    throw new Error(`PayPal Buttons are not eligible for ${plan.title}.`);
+                }
+
+                await buttons.render(containerRef.current);
+            } catch (error) {
+                console.error('Unable to render PayPal button:', error);
+                onError(error);
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            }
+        }
+
+        renderButton();
+
+        return () => {
+            isMounted = false;
+
+            try {
+                paypalButtonsRef.current?.close?.();
+            } catch {
+                // PayPal can throw if the button was already removed.
+            }
+
+            if (containerRef.current) {
+                containerRef.current.innerHTML = '';
+            }
+        };
+    }, [plan, planId, onApprove, onError]);
+
+    return (
+        <>
+            {isLoading || isRegistering ? (
+                <button type="button" className="primary" disabled>
+                    {isRegistering ? 'Enregistrement sécurisé...' : 'Chargement PayPal...'}
+                </button>
+            ) : null}
+
+            <div
+                ref={containerRef}
+                style={{
+                    display: isLoading || isRegistering ? 'none' : 'block',
+                }}
+            />
+        </>
+    );
 }
 
 function PricingCard({ plan, onSubscriptionRegistered }) {
@@ -251,11 +413,7 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
             </ul>
 
             <div className="paypal-button-zone">
-                {isRegistering ? (
-                    <button type="button" className="primary" disabled>
-                        Enregistrement sécurisé...
-                    </button>
-                ) : !planId ? (
+                {!planId ? (
                     <button
                         type="button"
                         className="primary"
@@ -270,22 +428,12 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
                         Plan PayPal non configuré
                     </button>
                 ) : (
-                    <PayPalButtons
-                        forceReRender={[planId]}
-                        style={{
-                            layout: 'vertical',
-                            shape: 'pill',
-                            label: 'subscribe',
-                            color: 'gold',
-                        }}
-                        createSubscription={(_data, actions) =>
-                            actions.subscription.create({
-                                plan_id: planId,
-                            })
-                        }
+                    <PayPalSubscriptionButton
+                        plan={plan}
+                        planId={planId}
+                        isRegistering={isRegistering}
                         onApprove={handleApprove}
                         onError={handleError}
-                        disabled={isRegistering}
                     />
                 )}
             </div>
@@ -328,14 +476,7 @@ function PricingPlans({ onSubscriptionRegistered }) {
     const clubPlans = PRICING_PLANS.filter((plan) => plan.group === 'Club');
 
     return (
-        <PayPalScriptProvider
-            options={{
-                clientId: PAYPAL_CLIENT_ID,
-                vault: true,
-                intent: 'subscription',
-                currency: 'EUR',
-            }}
-        >
+        <>
             <PricingGroup
                 title="Offres JAP"
                 plans={japPlans}
@@ -347,7 +488,7 @@ function PricingPlans({ onSubscriptionRegistered }) {
                 plans={clubPlans}
                 onSubscriptionRegistered={onSubscriptionRegistered}
             />
-        </PayPalScriptProvider>
+        </>
     );
 }
 

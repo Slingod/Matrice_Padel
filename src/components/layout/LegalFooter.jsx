@@ -32,8 +32,9 @@ const LEGAL_CONTENT = {
         title: 'Conditions générales de vente',
         body: [
             "Les présentes conditions générales de vente s’appliquent aux abonnements proposés par Padelingo.",
+            "Padelingo est édité par Julien Sicard, entrepreneur individuel, immatriculé sous le numéro SIRET 105875736 00016, dont l’activité a été créée le 03/06/2026, domicilié au 7 allée des Écus, 91090 Lisses, France.",
             "Padelingo propose des abonnements permettant d’accéder à des fonctionnalités avancées de l’application, notamment selon l’offre choisie : gestion étendue des tournois, sauvegardes supplémentaires, exports, partage live et accès complet aux fonctionnalités réservées aux utilisateurs abonnés.",
-            "Les prix des abonnements sont indiqués en euros, toutes taxes comprises lorsque cela est applicable. Les tarifs peuvent varier selon l’offre sélectionnée : abonnement mensuel, abonnement de plusieurs mois ou abonnement annuel.",
+            "Les prix des abonnements sont indiqués en euros. Lorsque Padelingo bénéficie de la franchise en base de TVA, la TVA n’est pas applicable conformément à l’article 293 B du Code général des impôts. Si Padelingo devient redevable de la TVA, les prix pourront être indiqués toutes taxes comprises selon le taux applicable. Les tarifs peuvent varier selon l’offre sélectionnée : abonnement mensuel, abonnement de plusieurs mois ou abonnement annuel.",
             "Le paiement est effectué via un prestataire de paiement sécurisé, notamment PayPal. Padelingo ne stocke pas directement les informations bancaires de l’utilisateur.",
             "L’abonnement donne accès aux fonctionnalités payantes pendant la durée prévue par l’offre choisie. En cas d’abonnement récurrent, celui-ci peut être renouvelé automatiquement selon les conditions affichées au moment de la souscription.",
             "L’utilisateur peut résilier son abonnement selon les modalités prévues par le prestataire de paiement ou depuis les outils mis à disposition par Padelingo lorsque cette fonctionnalité est disponible.",
@@ -41,7 +42,7 @@ const LEGAL_CONTENT = {
             "Lorsque l’utilisateur est un consommateur, il peut bénéficier d’un droit de rétractation de 14 jours dans les conditions prévues par la loi. Toutefois, si l’utilisateur demande l’accès immédiat au service numérique avant la fin du délai de rétractation, il peut reconnaître que l’exécution du service commence immédiatement et que son droit de rétractation peut être limité ou perdu selon les règles applicables.",
             "Aucun remboursement n’est automatiquement dû pour une période d’abonnement déjà commencée, sauf obligation légale contraire ou geste commercial accordé par Padelingo.",
             "En cas de problème de paiement, de suspension, d’annulation ou d’expiration de l’abonnement, l’accès aux fonctionnalités payantes peut être limité ou désactivé.",
-            "Pour toute question relative à l’abonnement, au paiement ou à l’accès au service, l’utilisateur peut contacter Padelingo à l’adresse suivante : slingo.drisca1@gmail.com.",
+            "Pour toute question relative à l’abonnement, au paiement, à l’accès au service ou aux présentes conditions générales de vente, l’utilisateur peut contacter Padelingo à l’adresse suivante : slingo.drisca1@gmail.com.",
         ],
     },
 };
