@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
-const PAYPAL_CLIENT_ID = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+function cleanEnvValue(value) {
+    return String(value || '').replace(/\s/g, '');
+}
+
+const PAYPAL_CLIENT_ID = cleanEnvValue(import.meta.env.VITE_PAYPAL_CLIENT_ID);
 
 const PLAN_IDS = {
-    ja_monthly: import.meta.env.VITE_PAYPAL_JA_MONTHLY_PLAN_ID,
-    ja_6_months: import.meta.env.VITE_PAYPAL_JA_6_MONTHS_PLAN_ID,
-    ja_yearly: import.meta.env.VITE_PAYPAL_JA_YEARLY_PLAN_ID,
-    club_monthly: import.meta.env.VITE_PAYPAL_CLUB_MONTHLY_PLAN_ID,
-    club_6_months: import.meta.env.VITE_PAYPAL_CLUB_6_MONTHS_PLAN_ID,
-    club_yearly: import.meta.env.VITE_PAYPAL_CLUB_YEARLY_PLAN_ID,
+    ja_monthly: cleanEnvValue(import.meta.env.VITE_PAYPAL_JA_MONTHLY_PLAN_ID),
+    ja_6_months: cleanEnvValue(import.meta.env.VITE_PAYPAL_JA_6_MONTHS_PLAN_ID),
+    ja_yearly: cleanEnvValue(import.meta.env.VITE_PAYPAL_JA_YEARLY_PLAN_ID),
+    club_monthly: cleanEnvValue(import.meta.env.VITE_PAYPAL_CLUB_MONTHLY_PLAN_ID),
+    club_6_months: cleanEnvValue(import.meta.env.VITE_PAYPAL_CLUB_6_MONTHS_PLAN_ID),
+    club_yearly: cleanEnvValue(import.meta.env.VITE_PAYPAL_CLUB_YEARLY_PLAN_ID),
 };
 
 const PRICING_PLANS = [
@@ -122,6 +126,10 @@ const PRICING_PLANS = [
 let paypalScriptPromise = null;
 
 function buildPayPalScriptUrl() {
+    if (!PAYPAL_CLIENT_ID) {
+        throw new Error('Missing VITE_PAYPAL_CLIENT_ID.');
+    }
+
     const params = new URLSearchParams({
         'client-id': PAYPAL_CLIENT_ID,
         vault: 'true',
