@@ -40,6 +40,14 @@ function normalizeAccessStatus(data) {
     };
 }
 
+function getAuthRedirectUrl() {
+    if (typeof window === 'undefined') {
+        return 'https://app-padelingo.com/';
+    }
+
+    return `${window.location.origin}/`;
+}
+
 export function useAuthAccess() {
     const [session, setSession] = useState(null);
     const [user, setUser] = useState(null);
@@ -107,6 +115,7 @@ export function useAuthAccess() {
                 if (blockInterface) {
                     setIsLoading(false);
                 }
+
                 setIsRefreshing(false);
             }
         },
@@ -117,6 +126,45 @@ export function useAuthAccess() {
         () => refreshAuthState({ blockInterface: false }),
         [refreshAuthState]
     );
+
+    const signInWithGoogle = useCallback(async () => {
+        setErrorMessage('');
+
+        const redirectTo = getAuthRedirectUrl();
+
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'consent',
+                },
+            },
+        });
+
+        if (error) {
+            console.error('Google login error:', error);
+            setErrorMessage(error.message || 'Google login failed.');
+        }
+    }, []);
+
+    const signOut = useCallback(async () => {
+        setErrorMessage('');
+
+        const { error } = await supabase.auth.signOut();
+
+        if (error) {
+            console.error('Logout error:', error);
+            setErrorMessage(error.message || 'Logout failed.');
+            return;
+        }
+
+        setSession(null);
+        setUser(null);
+        setAccessStatus(null);
+        setIsRefreshing(false);
+    }, []);
 
     useEffect(() => {
         refreshAuthState({ blockInterface: true });
@@ -166,42 +214,6 @@ export function useAuthAccess() {
         };
     }, [refreshAuthState, loadAccessStatus]);
 
-    async function signInWithGoogle() {
-        setErrorMessage('');
-
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: `${window.location.origin}/`,
-                queryParams: {
-                    access_type: 'offline',
-                },
-            },
-        });
-
-        if (error) {
-            console.error('Google login error:', error);
-            setErrorMessage(error.message || 'Google login failed.');
-        }
-    }
-
-    async function signOut() {
-        setErrorMessage('');
-
-        const { error } = await supabase.auth.signOut();
-
-        if (error) {
-            console.error('Logout error:', error);
-            setErrorMessage(error.message || 'Logout failed.');
-            return;
-        }
-
-        setSession(null);
-        setUser(null);
-        setAccessStatus(null);
-        setIsRefreshing(false);
-    }
-
     return useMemo(
         () => ({
             session,
@@ -224,6 +236,8 @@ export function useAuthAccess() {
             isLoading,
             isRefreshing,
             errorMessage,
+            signInWithGoogle,
+            signOut,
             reloadAccessStatus,
         ]
     );
