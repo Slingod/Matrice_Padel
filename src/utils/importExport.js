@@ -71,6 +71,13 @@ function parseRowsFromSheet(sheet) {
                     'classement',
                     'nom partenaire',
                     'prenom partenaire',
+                    'nom joueur 1',
+                    'prenom joueur 1',
+                    'nom joueur 2',
+                    'prenom joueur 2',
+                    'position de la paire',
+                    "nom de l\'epreuve",
+                    "categorie de l\'epreuve",
                     'poids paire',
                 ].includes(normalized);
             })
@@ -349,7 +356,170 @@ function parseFftRegistrationRows(rows) {
     });
 }
 
+function getPairRegistrationPlayerFromRow(row, playerIndex) {
+    const lastName = findValue(row, [
+        `nom joueur ${playerIndex}`,
+        `nom du joueur ${playerIndex}`,
+        `lastname player ${playerIndex}`,
+        `player ${playerIndex} last name`,
+    ]);
+    const firstName = findValue(row, [
+        `prenom joueur ${playerIndex}`,
+        `prénom joueur ${playerIndex}`,
+        `prenom du joueur ${playerIndex}`,
+        `prénom du joueur ${playerIndex}`,
+        `firstname player ${playerIndex}`,
+        `player ${playerIndex} first name`,
+    ]);
+    const rawRanking = findValue(row, [
+        `classement joueur ${playerIndex}`,
+        `classement du joueur ${playerIndex}`,
+        `ranking player ${playerIndex}`,
+        `player ${playerIndex} ranking`,
+    ]);
+    const displayName = buildPersonDisplayName(lastName, firstName);
+    const key = buildPersonKey(lastName, firstName);
+
+    return {
+        key,
+        displayName,
+        rank: parseRankValue(rawRanking),
+        rawRanking: normalizeText(rawRanking),
+        license: normalizeText(findValue(row, [
+            `licence joueur ${playerIndex}`,
+            `licence du joueur ${playerIndex}`,
+            `license player ${playerIndex}`,
+            `player ${playerIndex} license`,
+        ])),
+        club: normalizeText(findValue(row, [
+            `club joueur ${playerIndex}`,
+            `club du joueur ${playerIndex}`,
+            `club player ${playerIndex}`,
+            `player ${playerIndex} club`,
+        ])),
+        email: normalizeText(findValue(row, [
+            `mail joueur ${playerIndex}`,
+            `email joueur ${playerIndex}`,
+            `courriel joueur ${playerIndex}`,
+            `mail du joueur ${playerIndex}`,
+            `email player ${playerIndex}`,
+            `player ${playerIndex} email`,
+        ])),
+        phone: normalizeText(findValue(row, [
+            `telephone joueur ${playerIndex}`,
+            `téléphone joueur ${playerIndex}`,
+            `tel joueur ${playerIndex}`,
+            `portable joueur ${playerIndex}`,
+            `phone player ${playerIndex}`,
+            `player ${playerIndex} phone`,
+        ])),
+        birthDate: normalizeText(findValue(row, [
+            `date de naissance joueur ${playerIndex}`,
+            `naissance joueur ${playerIndex}`,
+            `birth date player ${playerIndex}`,
+            `player ${playerIndex} birth date`,
+        ])),
+    };
+}
+
+function isPairRegistrationRow(row) {
+    return Boolean(
+        findValue(row, ['nom joueur 1', 'nom du joueur 1']) &&
+        findValue(row, ['prenom joueur 1', 'prénom joueur 1', 'prenom du joueur 1', 'prénom du joueur 1']) &&
+        findValue(row, ['nom joueur 2', 'nom du joueur 2']) &&
+        findValue(row, ['prenom joueur 2', 'prénom joueur 2', 'prenom du joueur 2', 'prénom du joueur 2'])
+    );
+}
+
+function parsePairRegistrationRows(rows) {
+    const teams = rows
+        .filter((row) => isPairRegistrationRow(row))
+        .map((row, index) => {
+            const position = parseRankValue(findValue(row, [
+                'position de la paire',
+                'position paire',
+                'rang paire',
+                'pair position',
+            ]));
+            const pairWeight = parsePairWeightValue(findValue(row, [
+                'poids paire',
+                'poids de paire',
+                'pair weight',
+            ]));
+            const eventName = normalizeText(findValue(row, [
+                "nom de l'épreuve",
+                "nom de l\'epreuve",
+                'epreuve',
+                'épreuve',
+                'event name',
+            ]));
+            const eventCategory = normalizeText(findValue(row, [
+                "catégorie de l'épreuve",
+                "categorie de l\'epreuve",
+                'catégorie épreuve',
+                'categorie epreuve',
+                'event category',
+            ]));
+            const player1 = getPairRegistrationPlayerFromRow(row, 1);
+            const player2 = getPairRegistrationPlayerFromRow(row, 2);
+
+            const players = [player1, player2].map((player, playerIndex) => ({
+                id: `${player.key || `player-${playerIndex + 1}`}-J${playerIndex + 1}`,
+                slot: `J${playerIndex + 1}`,
+                name: player.displayName,
+                rank: Number(player.rank) || 0,
+                rawRanking: player.rawRanking || '',
+                license: player.license || '',
+                club: player.club || '',
+                email: player.email || '',
+                phone: player.phone || '',
+                birthDate: player.birthDate || '',
+            }));
+
+            const displayName = buildTeamDisplayName(players);
+            const calculatedCumulativeRank = players.reduce(
+                (sum, player) => sum + (Number(player.rank) || 0),
+                0
+            );
+            const cumulativeRank = pairWeight.isNumeric && pairWeight.value > 0
+                ? pairWeight.value
+                : calculatedCumulativeRank;
+            const teamIndex = position || index + 1;
+
+            return {
+                id: `team-pair-import-${teamIndex}-${Date.now()}-${index + 1}`,
+                number: `Équipe ${teamIndex}`,
+                name: displayName,
+                fullName: displayName,
+                matchLabel: displayName,
+                players,
+                cumulativeRank,
+                officialPairWeight: pairWeight.value || 0,
+                pairWeightText: pairWeight.text || '',
+                pairPosition: position || index + 1,
+                eventName,
+                eventCategory,
+            };
+        });
+
+    return teams.sort((a, b) => {
+        const aPosition = Number(a.pairPosition) || 999999;
+        const bPosition = Number(b.pairPosition) || 999999;
+        if (aPosition !== bPosition) return aPosition - bPosition;
+
+        const aRank = Number(a.cumulativeRank) || 999999999;
+        const bRank = Number(b.cumulativeRank) || 999999999;
+        return aRank - bRank;
+    });
+}
+
 function parseParticipantsRows(rows) {
+    const pairRegistrationTeams = parsePairRegistrationRows(rows);
+
+    if (pairRegistrationTeams.length > 0) {
+        return pairRegistrationTeams;
+    }
+
     const fftTeams = parseFftRegistrationRows(rows);
 
     if (fftTeams.length > 0) {
@@ -657,12 +827,12 @@ function buildCombinedRows(combinedPointsRanking) {
     return combinedPointsRanking.map((team, index) => ({
         Place: index + 1,
         Équipe: team.teamName,
-        'Rang cumulé': team.cumulativeRank || 0,
         J: team.played,
         V: team.wins,
         D: team.losses,
-        PF: team.pointsFor,
-        PA: team.pointsAgainst,
+        S: team.setsDiff ?? team.setDiff ?? team.sets ?? '',
+        JG: team.pointsFor,
+        JE: team.pointsAgainst,
         Diff: team.diff,
         Total: team.totalScore,
     }));
@@ -672,7 +842,7 @@ function buildFinalRankingRows(finalRanking) {
     return finalRanking.map((row) => ({
         Place: row.position,
         Équipe: row.teamName,
-        'Rang cumulé': row.cumulativeRank || 0,
+        Total: row.totalScore ?? row.total ?? '',
     }));
 }
 
