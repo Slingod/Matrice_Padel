@@ -54,20 +54,20 @@ function SubscriptionPage({ ctx }) {
 
             <div className="subscription-legal-note">
                 <p className="note">
-                    Les paiements sont sécurisés par PayPal.
-                    Les formules sans engagement sont renouvelées chaque mois jusqu’à résiliation.
+                    Les paiements sont sécurisés par PayPal. L’offre mensuelle est
+                    renouvelée chaque mois jusqu’à résiliation.
                 </p>
 
                 <p className="note">
-                    Les formules avec engagement sont prélevées mensuellement pendant
-                    6 ou 12 mois, puis prennent fin après le dernier cycle, sous réserve
-                    que les plans PayPal soient configurés avec un nombre de cycles limité.
+                    L’offre annuelle est facturée une fois par an et se renouvelle
+                    automatiquement chaque année, sauf résiliation avant la prochaine
+                    échéance.
                 </p>
 
                 <p className="note">
                     Les prix sont affichés en euros. Les informations fiscales applicables
-                    et les conditions de facturation doivent figurer dans les conditions
-                    générales de vente et sur les factures.
+                    et les conditions de facturation figurent dans les conditions générales
+                    de vente et sur les factures.
                 </p>
             </div>
         </section>
