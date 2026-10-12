@@ -8,117 +8,42 @@ function cleanEnvValue(value) {
 const PAYPAL_CLIENT_ID = cleanEnvValue(import.meta.env.VITE_PAYPAL_CLIENT_ID);
 
 const PLAN_IDS = {
-    ja_monthly: cleanEnvValue(import.meta.env.VITE_PAYPAL_JA_MONTHLY_PLAN_ID),
-    ja_6_months: cleanEnvValue(import.meta.env.VITE_PAYPAL_JA_6_MONTHS_PLAN_ID),
-    ja_yearly: cleanEnvValue(import.meta.env.VITE_PAYPAL_JA_YEARLY_PLAN_ID),
-    club_monthly: cleanEnvValue(import.meta.env.VITE_PAYPAL_CLUB_MONTHLY_PLAN_ID),
-    club_6_months: cleanEnvValue(import.meta.env.VITE_PAYPAL_CLUB_6_MONTHS_PLAN_ID),
-    club_yearly: cleanEnvValue(import.meta.env.VITE_PAYPAL_CLUB_YEARLY_PLAN_ID),
+    padelingo_monthly: cleanEnvValue(import.meta.env.VITE_PAYPAL_MONTHLY_PLAN_ID),
+    padelingo_yearly: cleanEnvValue(import.meta.env.VITE_PAYPAL_YEARLY_PLAN_ID),
 };
 
 const PRICING_PLANS = [
     {
-        id: 'ja_monthly',
-        group: 'JAP',
-        title: 'JAP mensuel',
-        audience: 'Pour les juges-arbitres indépendants qui souhaitent rester flexibles.',
-        price: '25,99 €',
+        id: 'padelingo_monthly',
+        title: 'Padelingo Mensuel',
+        audience: 'Pour tester Padelingo sans engagement et gérer tes tournois simplement.',
+        price: '9,90 €',
         billing: '/ mois · sans engagement',
-        badge: 'Flexible',
+        badge: 'Offre lancement',
         features: [
-            '1 compte JAP',
-            'Gestion complète des équipes, poules, matchs et classements',
+            'Accès complet à Padelingo',
+            'Création des équipes, poules, matchs et classements',
+            'Gestion des scores et phases finales',
             'Exports PDF, CSV, XLSX, XLS et JSON',
             'Partage live spectateurs avec lien public et QR code',
+            'Résiliation possible chaque mois',
+        ],
+    },
+    {
+        id: 'padelingo_yearly',
+        title: 'Padelingo Annuel',
+        audience: 'Pour les clubs, organisateurs et juges-arbitres qui veulent le meilleur tarif.',
+        price: '99,90 €',
+        billing: '/ an · soit environ 8,33 € / mois',
+        badge: 'Meilleur tarif',
+        highlight: true,
+        features: [
+            'Toutes les fonctionnalités de Padelingo',
+            'Accès complet pendant 12 mois',
+            'Environ 2 mois offerts par rapport au mensuel',
+            'Exports et partage live inclus',
             'Sauvegarde, importation et restauration des tournois',
-            'Résiliation possible chaque mois',
-        ],
-    },
-    {
-        id: 'ja_6_months',
-        group: 'JAP',
-        title: 'JAP 6 mois',
-        audience: 'Pour une saison régulière avec un tarif mensuel réduit.',
-        price: '24 €',
-        billing: '/ mois pendant 6 mois · total 144 €',
-        badge: 'Économie',
-        features: [
-            'Toutes les fonctionnalités de l’offre JAP',
-            '6 prélèvements mensuels de 24 €',
-            'Exports et partage live inclus',
-            'Sauvegardes étendues',
-            'Assistance prioritaire',
-            'Fin après le sixième cycle PayPal',
-        ],
-    },
-    {
-        id: 'ja_yearly',
-        group: 'JAP',
-        title: 'JAP annuel',
-        audience: 'Pour les juges-arbitres qui utilisent Padelingo toute l’année.',
-        price: '23 €',
-        billing: '/ mois pendant 12 mois · total 276 €',
-        badge: 'Meilleur tarif JAP',
-        highlight: true,
-        features: [
-            'Toutes les fonctionnalités de l’offre JAP',
-            '12 prélèvements mensuels de 23 €',
-            'Exports et partage live inclus',
-            'Sauvegardes étendues',
-            'Assistance prioritaire',
-            'Fin après le douzième cycle PayPal',
-        ],
-    },
-    {
-        id: 'club_monthly',
-        group: 'Club',
-        title: 'Club mensuel',
-        audience: 'Pour les clubs, associations et structures souhaitant rester flexibles.',
-        price: '35 €',
-        billing: '/ mois · sans engagement',
-        badge: 'Club flexible',
-        features: [
-            'Accès complet aux outils de gestion de tournoi',
-            'Gestion des équipes, poules, matchs et phases finales',
-            'Exports PDF, CSV, XLSX, XLS et JSON',
-            'Partage live sur téléphone, tablette, ordinateur ou télévision',
-            'Lien public en lecture seule et QR code',
-            'Résiliation possible chaque mois',
-        ],
-    },
-    {
-        id: 'club_6_months',
-        group: 'Club',
-        title: 'Club 6 mois',
-        audience: 'Pour les clubs organisant plusieurs tournois pendant la saison.',
-        price: '33 €',
-        billing: '/ mois pendant 6 mois · total 198 €',
-        badge: 'Économie Club',
-        features: [
-            'Toutes les fonctionnalités de l’offre Club',
-            '6 prélèvements mensuels de 33 €',
-            'Exports et partage live inclus',
-            'Sauvegardes étendues',
-            'Assistance prioritaire',
-            'Fin après le sixième cycle PayPal',
-        ],
-    },
-    {
-        id: 'club_yearly',
-        group: 'Club',
-        title: 'Club annuel',
-        audience: 'Pour les clubs qui utilisent Padelingo tout au long de l’année.',
-        price: '32 €',
-        billing: '/ mois pendant 12 mois · total 384 €',
-        badge: 'Meilleur tarif Club',
-        highlight: true,
-        features: [
-            'Toutes les fonctionnalités de l’offre Club',
-            '12 prélèvements mensuels de 32 €',
-            'Exports et partage live inclus',
-            'Sauvegardes étendues',
-            'Assistance prioritaire',
-            'Fin après le douzième cycle PayPal',
+            'Idéal pour une saison complète',
         ],
     },
 ];
@@ -449,24 +374,6 @@ function PricingCard({ plan, onSubscriptionRegistered }) {
     );
 }
 
-function PricingGroup({ title, plans, onSubscriptionRegistered }) {
-    return (
-        <section className="pricing-group">
-            <h3>{title}</h3>
-
-            <div className="pricing-grid">
-                {plans.map((plan) => (
-                    <PricingCard
-                        key={plan.id}
-                        plan={plan}
-                        onSubscriptionRegistered={onSubscriptionRegistered}
-                    />
-                ))}
-            </div>
-        </section>
-    );
-}
-
 function PricingPlans({ onSubscriptionRegistered }) {
     if (!PAYPAL_CLIENT_ID) {
         return (
@@ -480,23 +387,20 @@ function PricingPlans({ onSubscriptionRegistered }) {
         );
     }
 
-    const japPlans = PRICING_PLANS.filter((plan) => plan.group === 'JAP');
-    const clubPlans = PRICING_PLANS.filter((plan) => plan.group === 'Club');
-
     return (
-        <>
-            <PricingGroup
-                title="Offres JAP"
-                plans={japPlans}
-                onSubscriptionRegistered={onSubscriptionRegistered}
-            />
+        <section className="pricing-group">
+            <h3>Offre lancement Padelingo</h3>
 
-            <PricingGroup
-                title="Offres Club"
-                plans={clubPlans}
-                onSubscriptionRegistered={onSubscriptionRegistered}
-            />
-        </>
+            <div className="pricing-grid">
+                {PRICING_PLANS.map((plan) => (
+                    <PricingCard
+                        key={plan.id}
+                        plan={plan}
+                        onSubscriptionRegistered={onSubscriptionRegistered}
+                    />
+                ))}
+            </div>
+        </section>
     );
 }
 
